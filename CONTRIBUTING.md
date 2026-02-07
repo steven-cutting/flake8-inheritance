@@ -5,22 +5,21 @@
 ```bash
 git clone https://github.com/steven-cutting/flake8-inheritance.git
 cd flake8-inheritance
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
+uv sync --all-extras --dev
 ```
 
 ## Running tests
 
 ```bash
-nox -s tests
+uv run pytest
 ```
 
 ## Running linters
 
 ```bash
-nox -s lint
-nox -s typecheck
+uv run ruff check src tests
+uv run ruff format --check src tests
+uv run mypy src
 ```
 
 ## Architecture decisions

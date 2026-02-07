@@ -1,9 +1,13 @@
 """Flake8 plugin that enforces inheritance restrictions."""
+
 from __future__ import annotations
 
-import ast
 import importlib.metadata
-from typing import ClassVar, Generator
+from typing import TYPE_CHECKING, ClassVar
+
+if TYPE_CHECKING:
+    import ast
+    from collections.abc import Generator
 
 
 class InheritanceChecker:
@@ -19,9 +23,9 @@ class InheritanceChecker:
     version: ClassVar[str] = importlib.metadata.version("flake8-inheritance")
 
     def __init__(self, tree: ast.AST) -> None:
+        """Initialize the checker with the AST for a single file."""
         self._tree = tree
 
     def run(self) -> Generator[tuple[int, int, str, type], None, None]:
         """Run the checker. Yields nothing until rules are implemented."""
-        return
-        yield  # make this a generator
+        yield from ()
