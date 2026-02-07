@@ -6,4 +6,8 @@
 - 0004. [Use setuptools with setuptools-scm and zero runtime dependencies beyond flake8](0004-use-setuptools-with-setuptools-scm-and-zero-runtime-dependencies-beyond-flake8.md) — Accepted (2026-02-07)
 - 0005. [Derive version from git tags via setuptools-scm](0005-derive-version-from-git-tags-via-setuptools-scm.md) — Accepted (2026-02-07)
 - 0006. [Use BSD-3-Clause license](0006-use-bsd-3-clause-license.md) — Accepted (2026-02-07)
+- 0007. [Define error codes as framework-agnostic frozen dataclasses](0007-define-error-codes-as-framework-agnostic-frozen-dataclasses.md) — Accepted (2026-02-07)
+- 0008. [Classify base classes using import-map lookup with sys.stdlib_module_names](0008-classify-base-classes-using-import-map-lookup-with-sys-stdlib-module-names.md) — Accepted (2026-02-07)
+- 0009. [Decouple visitor analysis logic from flake8 plugin interface](0009-decouple-visitor-analysis-logic-from-flake8-plugin-interface.md) — Accepted (2026-02-07)
+- 0010. [Silently skip unanalyzable patterns rather than guessing or crashing](0010-silently-skip-unanalyzable-patterns-rather-than-guessing-or-crashing.md) — Accepted (2026-02-07)
 
