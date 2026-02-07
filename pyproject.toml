@@ -85,7 +85,6 @@ ignore = [
     "D",       # docstring rules relaxed in tests
     "S101",    # assert allowed in tests
     "ANN",     # annotations not required in tests
-    "PLR2004", # magic values allowed in tests
 ]
 
 [tool.mypy]
