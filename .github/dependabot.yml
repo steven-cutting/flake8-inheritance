@@ -1,0 +1,49 @@
+# .github/dependabot.yml
+---
+version: 2
+
+# Use uv if the project uses uv.lock. Keep pip as a fallback if not.
+updates:
+  # Python via uv
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Los_Angeles"
+    groups:
+      runtime:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+      dev-tools:
+        patterns:
+          - "ruff*"
+          - "mypy*"
+          - "pytest*"
+          - "nox*"
+          - "hypothesis*"
+          - "sphinx*"
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "security"]
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  # Keep GitHub Actions up to date
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Los_Angeles"
+    groups:
+      actions:
+        patterns: ["*"]
+    labels: ["dependencies", "security", "github-actions"]
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps"
+      include: "scope"
