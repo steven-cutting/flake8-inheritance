@@ -10,6 +10,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  zizmor:
+    name: Zizmor (workflow security)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install zizmor
+        run: python -m pip install --upgrade pip zizmor
+      - name: Run zizmor
+        run: zizmor .github/workflows
+
   lint:
     name: Lint (pre-commit, Python 3.11)
     runs-on: ubuntu-latest
