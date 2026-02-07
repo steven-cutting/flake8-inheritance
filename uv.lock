@@ -251,7 +251,7 @@ requires-dist = [
     { name = "pymarkdownlnt", marker = "extra == 'dev'", specifier = ">=0.9.17" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.2" },
     { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=5.0" },
-    { name = "pytest-flake8-path", marker = "extra == 'test'" },
+    { name = "pytest-flake8-path", marker = "extra == 'test'", specifier = ">=1.5" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6.9" },
 ]
 provides-extras = ["test", "dev"]

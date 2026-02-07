@@ -42,7 +42,7 @@ test = [
     "pytest>=8.2",
     "pytest-cov>=5.0",
     "coverage>=7.6",
-    "pytest-flake8-path",
+    "pytest-flake8-path>=1.5",
 ]
 dev = [
     "flake8-inheritance[test]",
