@@ -2,7 +2,7 @@
 ---
 version: 2
 
-# Use uv if the project uses uv.lock. Keep pip as a fallback if not.
+# Use uv for Python dependency updates (projects using uv.lock).
 updates:
   # Python via uv
   - package-ecosystem: "uv"
