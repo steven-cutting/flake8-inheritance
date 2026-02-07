@@ -6,4 +6,3 @@
 - 0004. [Use setuptools with setuptools-scm and zero runtime dependencies beyond flake8](0004-use-setuptools-with-setuptools-scm-and-zero-runtime-dependencies-beyond-flake8.md) — Accepted (2026-02-07)
 - 0005. [Derive version from git tags via setuptools-scm](0005-derive-version-from-git-tags-via-setuptools-scm.md) — Accepted (2026-02-07)
 - 0006. [Use BSD-3-Clause license](0006-use-bsd-3-clause-license.md) — Accepted (2026-02-07)
-
