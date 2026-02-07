@@ -17,7 +17,7 @@ jobs:
       - name: Set up Python 3.13
         run: uv python install 3.13
       - name: Build
-        run: uv build
+        run: uv build --python 3.13
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
