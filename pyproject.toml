@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=77", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flake8-inheritance"
+description = "Flake8 plugin enforcing composition over inheritance"
+readme = "README.md"
+license = "BSD-3-Clause"
+requires-python = ">=3.11"
+authors = [
+    { name = "Steven Cutting" },
+]
+keywords = ["flake8", "linter", "inheritance", "composition"]
+classifiers = [
+    "Framework :: Flake8",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = [
+    "flake8>=6.0",
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/steven-cutting/flake8-inheritance"
+Changelog = "https://github.com/steven-cutting/flake8-inheritance/blob/main/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/steven-cutting/flake8-inheritance/issues"
+Source = "https://github.com/steven-cutting/flake8-inheritance"
+
+[project.entry-points."flake8.extension"]
+INH = "flake8_inheritance.checker:InheritanceChecker"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7",
+    "pytest-cov>=4",
+    "pytest-flake8-path>=1.5",
+]
+dev = [
+    "flake8-inheritance[test]",
+    "nox",
+    "ruff",
+    "mypy",
+    "pre-commit",
+    "build",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools-scm]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-markers", "-ra"]
+
+[tool.ruff]
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = "flake8.*"
+ignore_missing_imports = true
