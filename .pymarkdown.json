@@ -28,7 +28,7 @@
       "style": "ordered"
     },
     "no-emphasis-as-heading": {
-      "enabled": false
+      "enabled": true
     }
   }
 }
