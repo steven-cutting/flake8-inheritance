@@ -30,6 +30,8 @@ jobs:
     needs: release-build
     permissions:
       id-token: write
+      contents: read
+      actions: read
     environment:
       name: pypi
     steps:
