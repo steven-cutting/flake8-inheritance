@@ -1,0 +1,22 @@
+{
+  "hooks": [
+    {
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "command": ".claude/hooks/check-uv-prefix.py"
+    },
+    {
+      "event": "PostToolUse",
+      "matcher": "Bash",
+      "command": ".claude/hooks/post-change-reminder.py"
+    },
+    {
+      "event": "Stop",
+      "command": "printf '\\a'"
+    },
+    {
+      "event": "Notification",
+      "command": "printf '\\a'"
+    }
+  ]
+}
