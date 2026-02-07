@@ -64,7 +64,15 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["--strict-markers", "-ra"]
+addopts = ["-q", "--disable-warnings"]
+
+[tool.coverage.run]
+branch = true
+source = ["flake8_inheritance"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
 
 [tool.ruff]
 line-length = 100
@@ -97,3 +105,9 @@ show_error_codes = true
 [[tool.mypy.overrides]]
 module = "flake8.*"
 ignore_missing_imports = true
+
+[tool.codespell]
+ignore-words-list = "INH"
+
+[tool.typos.default.extend-words]
+INH = "INH"
