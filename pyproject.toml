@@ -55,7 +55,7 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.setuptools-scm]
+[tool.setuptools_scm]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import importlib.metadata
 from typing import ClassVar, Generator
 
 
@@ -15,7 +16,7 @@ class InheritanceChecker:
     """
 
     name: ClassVar[str] = "flake8-inheritance"
-    version: ClassVar[str] = "0.0.0"  # placeholder until setuptools-scm wired
+    version: ClassVar[str] = importlib.metadata.version("flake8-inheritance")
 
     def __init__(self, tree: ast.AST) -> None:
         self._tree = tree
