@@ -10,14 +10,25 @@ data = json.load(sys.stdin)
 cmd = data.get("tool_input", {}).get("command", "")
 bare_tools = {"pytest", "pre-commit", "ruff", "mypy"}
 
-# Prefixes that are transparent wrappers around the real command.
-WRAPPER_COMMANDS = {"sudo", "env", "nohup", "nice", "ionice", "command", "exec", "time"}
+# Wrapper commands and which of their short flags consume an argument value.
+# Mapping: command -> set of flags that take a following token as their value.
+_WRAPPER_FLAGS: dict[str, set[str]] = {
+    "sudo": {"-u", "-g", "-C", "-D", "-R", "-T", "-p"},
+    "env": set(),  # env uses KEY=VAL pairs, handled separately
+    "nohup": set(),
+    "nice": {"-n"},
+    "ionice": {"-c", "-n", "-p"},
+    "command": {"-v", "-V"},
+    "exec": set(),
+    "time": set(),
+}
+WRAPPER_COMMANDS = set(_WRAPPER_FLAGS)
 # Number of tokens in the 'uv run' prefix (i.e., ["uv", "run"]).
 _UV_RUN_TOKEN_COUNT = 2
 
-# Split the command into segments (separated by &&, ||, ;, or pipes) and
-# ensure any tool invocation in a segment is guarded by 'uv run'.
-segments = re.split(r"&&|\|\||[;|]", cmd)
+# Split the command into segments separated by &&, ||, ;, |, or background &.
+# Match && and || first so they aren't consumed as single & or |.
+segments = re.split(r"&&|\|\||[;&|]", cmd)
 for segment in segments:
     segment_stripped = segment.strip()
     if not segment_stripped:
@@ -26,28 +37,51 @@ for segment in segments:
     try:
         tokens = shlex.split(segment_stripped)
     except ValueError:
-        # If shlex can't parse it (unmatched quotes, etc.), skip this segment
-        # rather than blocking potentially valid commands.
+        # shlex can't parse the segment (unmatched quotes, shell syntax, etc.).
+        # Fail closed: do a conservative word-boundary check for bare tools.
+        for tool in bare_tools:
+            if re.search(rf"(?<!\S){re.escape(tool)}(?!\S)", segment_stripped) and not re.search(
+                rf"(?<!\S)uv\s+run\s+{re.escape(tool)}(?!\S)",
+                segment_stripped,
+            ):
+                sys.stderr.write(f"Use 'uv run {tool}' instead of bare '{tool}'\n")
+                sys.exit(2)
         continue
 
     if not tokens:
         continue
 
-    # Walk past any wrapper commands (and their flag arguments) to find the
-    # real command word.  For `env`, also skip KEY=VAL pairs.
+    # Walk past wrapper commands, their flags (including flag arguments), and
+    # env-style KEY=VAL pairs to find the real command word.
     idx = 0
     while idx < len(tokens):
         tok = tokens[idx]
         if tok in WRAPPER_COMMANDS:
+            wrapper = tok
             idx += 1
             # `env` can have KEY=VAL pairs before the command.
-            if tok == "env":
-                while idx < len(tokens) and "=" in tokens[idx]:
+            if wrapper == "env":
+                while idx < len(tokens) and ("=" in tokens[idx] or tokens[idx].startswith("-")):
                     idx += 1
+                continue
             continue
-        # Skip flags that belong to the wrapper (e.g., `sudo -u root`).
-        if tok.startswith("-"):
+        # End-of-options marker: the next token is the command word.
+        if tok == "--":
             idx += 1
+            break
+        # Skip flags that belong to the wrapper, consuming their arguments
+        # when the flag is known to take a value.
+        if tok.startswith("-"):
+            # Determine which wrapper we're inside (the most recent one).
+            # Walk backwards through tokens to find it.
+            known_flags: set[str] = set()
+            for prev in reversed(tokens[:idx]):
+                if prev in _WRAPPER_FLAGS:
+                    known_flags = _WRAPPER_FLAGS[prev]
+                    break
+            idx += 1
+            if tok in known_flags and idx < len(tokens):
+                idx += 1  # consume the flag's argument
             continue
         break
 
