@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Final
 
 
 @dataclass(frozen=True)
@@ -17,12 +18,12 @@ class ErrorCode:
         return f"{self.code} {self.message.format(**kwargs)}"
 
 
-INH001 = ErrorCode(
+INH001: Final[ErrorCode] = ErrorCode(
     code="INH001",
     message="Inheritance from internal class '{base}' is not allowed (use composition instead)",
 )
 
-INH002 = ErrorCode(
+INH002: Final[ErrorCode] = ErrorCode(
     code="INH002",
     message=(
         "Abstract base class '{cls}' contains concrete method "
