@@ -45,4 +45,4 @@ Create new ADRs with: `decree new "Title of decision"`
 
 ## Documentation
 
-Check `doc/` for project documentation. Read `doc/README.md` first.
+See the top-level `README.md` and `doc/adr/` for project documentation and architectural decisions.
