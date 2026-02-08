@@ -232,7 +232,8 @@ commit SHAs or version tags.
 ### Task 1.7 — Create the publish workflow (`.github/workflows/publish.yml`)
 
 Create `.github/workflows/publish.yml` modeled on the decree project.
-Triggered on GitHub release creation and `workflow_dispatch`:
+Triggered on published GitHub releases and `workflow_dispatch` (with a
+confirmation input before publishing):
 
 **Jobs:**
 
