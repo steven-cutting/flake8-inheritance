@@ -47,8 +47,9 @@ risk with other flake8 plugins):
 
 ## Style and Conventions
 
-- Always include `from __future__ import annotations` at the top of every
-  module.
+- In production code under `src/flake8_inheritance/`, always include
+  `from __future__ import annotations` at the top of each module. Tests are
+  exempt from this requirement.
 - Use type hints everywhere. The project runs `mypy --strict`.
 - Use frozen dataclasses for value objects (immutable, hashable by
   default).
