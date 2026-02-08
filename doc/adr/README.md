@@ -6,3 +6,6 @@
 - 0004. [Use setuptools with setuptools-scm and zero runtime dependencies beyond flake8](0004-use-setuptools-with-setuptools-scm-and-zero-runtime-dependencies-beyond-flake8.md) — Accepted (2026-02-07)
 - 0005. [Derive version from git tags via setuptools-scm](0005-derive-version-from-git-tags-via-setuptools-scm.md) — Accepted (2026-02-07)
 - 0006. [Use BSD-3-Clause license](0006-use-bsd-3-clause-license.md) — Accepted (2026-02-07)
+- 0007. [Use composition-over-inheritance as the core design principle](0007-use-composition-over-inheritance-as-the-core-design-principle.md) — Accepted (2026-02-07)
+- 0008. [Use flake8 AST checker plugin architecture](0008-use-flake8-ast-checker-plugin-architecture.md) — Accepted (2026-02-07)
+- 0009. [Use uv for project and dependency management](0009-use-uv-for-project-and-dependency-management.md) — Accepted (2026-02-07)
