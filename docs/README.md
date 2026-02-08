@@ -8,7 +8,7 @@ flake8-inheritance.
 | Document | Description |
 |---|---|
 | [architecture.md](architecture.md) | Module responsibilities, data flow, and design principles |
-| [flake8-plugin-contract.md](flake8-plugin-contract.md) | How flake8 discovers and invokes the plugin |
+| [flake8-plugin-contract.md](flake8-plugin-contract.md) | How flake8 discovers and invokes plugins |
 | [error-codes.md](error-codes.md) | INH error code reference with examples |
 
 ## See Also
