@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import dataclasses
 
+import pytest
+
 from flake8_inheritance.codes import INH001, INH002, ErrorCode
 
 
@@ -15,13 +17,8 @@ class TestErrorCodeImmutability:
         assert dataclasses.fields(ErrorCode)  # has fields
         # Frozen dataclasses raise FrozenInstanceError on attribute assignment
         code = ErrorCode(code="TST001", message="test {x}")
-        try:
+        with pytest.raises(dataclasses.FrozenInstanceError):
             code.code = "TST002"  # type: ignore[misc]
-        except dataclasses.FrozenInstanceError:
-            pass
-        else:
-            msg = "ErrorCode should be frozen"
-            raise AssertionError(msg)
 
 
 class TestINH001:
