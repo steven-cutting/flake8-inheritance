@@ -11,7 +11,7 @@ codebases.
 - Test: `uv run pytest`
 - Test with coverage: `uv run pytest --cov=flake8_inheritance --cov-report=term-missing`
 - Lint: `uv run pre-commit run --all-files`
-- Type check: `uv run mypy src`
+- Type check: `uv run mypy src tests`
 - Format: `uv run ruff format src tests`
 
 ## CRITICAL RULES
