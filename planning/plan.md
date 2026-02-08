@@ -82,9 +82,18 @@ instead of the hardcoded string. Remove any hardcoded version strings from
 the source tree.
 
 **Done when:**
-`python -c "import flake8_inheritance; from importlib.metadata import version; print(version('flake8-inheritance'))"`
-prints a version derived from the git tag, and
-`grep -r "0\.0\.0" src/` returns nothing.
+
+```bash
+python - <<'PY'
+from importlib.metadata import version
+import flake8_inheritance
+
+print(version("flake8-inheritance"))
+PY
+```
+
+prints a version derived from the git tag, and `grep -r "0\.0\.0" src/`
+returns nothing.
 
 ---
 
@@ -465,8 +474,10 @@ write the failing test, then implement.
 and a `format(**kwargs)` method. Define `INH001` and `INH002` with their
 message templates:
 
-- `INH001`: `"Inheritance from internal class '{base}' is not allowed (use composition instead)"`
-- `INH002`: `"Abstract base class '{cls}' contains concrete method '{method}' (ABCs should only define abstract methods)"`
+- `INH001`: `"Inheritance from internal class '{base}' is not allowed (use
+  composition instead)"`
+- `INH002`: `"Abstract base class '{cls}' contains concrete method '{method}'
+  (ABCs should only define abstract methods)"`
 
 **Run:** `uv run pytest tests/test_codes.py` and
 `uv run pre-commit run --all-files`.
@@ -752,8 +763,8 @@ Add a table documenting all error codes:
 
 | Code | Description | Triggers when… | Fix by… |
 |------|-------------|-----------------|---------|
-| INH001 | Inheritance from internal class | A class inherits from same-file, relative import, or configured project package class | Replace inheritance with composition |
-| INH002 | Concrete method in ABC | An ABC contains a method without `@abstractmethod` | Add `@abstractmethod` or extract to utility |
+| INH001 | Internal inheritance | Inherits from same-file/relative/project class | Use composition |
+| INH002 | Non-abstract ABC method | ABC has method without @abstractmethod | Add @abstractmethod |
 
 Include triggering and fixed code examples for each.
 
