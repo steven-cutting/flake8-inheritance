@@ -14,26 +14,42 @@ RELATIVE_SENTINEL: Final[str] = "__relative__"
 
 @dataclass(frozen=True)
 class InheritanceError:
-    """A located error produced by the inheritance visitor.
-
-    Each error carries a ``message_kwargs`` dict whose keys match
-    the format placeholders in the associated :class:`ErrorCode`.
-    For example, INH001 uses ``{"base": "ClassName"}`` while INH002
-    uses ``{"cls": "MyABC", "method": "concrete_helper"}``.
-    """
+    """INH001 error: inheritance from an internal class."""
 
     line: int
     col: int
     code: ErrorCode
-    message_kwargs: dict[str, str]
+    base: str
 
     def format(self) -> str:
         """Return the full flake8 error string."""
-        return self.code.format(**self.message_kwargs)
+        return self.code.format(base=self.base)
 
     def as_flake8_tuple(self) -> tuple[int, int, str, type]:
         """Return the ``(line, col, message, type)`` tuple flake8 expects."""
         return (self.line, self.col, self.format(), type(self))
+
+
+@dataclass(frozen=True)
+class ABCPurityError:
+    """INH002 error: concrete method in an abstract base class."""
+
+    line: int
+    col: int
+    code: ErrorCode
+    cls: str
+    method: str
+
+    def format(self) -> str:
+        """Return the full flake8 error string."""
+        return self.code.format(cls=self.cls, method=self.method)
+
+    def as_flake8_tuple(self) -> tuple[int, int, str, type]:
+        """Return the ``(line, col, message, type)`` tuple flake8 expects."""
+        return (self.line, self.col, self.format(), type(self))
+
+
+LintError = InheritanceError | ABCPurityError
 
 
 class ImportTracker(ast.NodeVisitor):
@@ -151,7 +167,7 @@ class InheritanceVisitor(ast.NodeVisitor):
                         line=node.lineno,
                         col=node.col_offset,
                         code=INH001,
-                        message_kwargs={"base": base_name},
+                        base=base_name,
                     )
                 )
                 continue
@@ -163,7 +179,7 @@ class InheritanceVisitor(ast.NodeVisitor):
                         line=node.lineno,
                         col=node.col_offset,
                         code=INH001,
-                        message_kwargs={"base": base_name},
+                        base=base_name,
                     )
                 )
 
@@ -181,7 +197,7 @@ class ABCPurityVisitor(ast.NodeVisitor):
     def __init__(self, import_tracker: ImportTracker) -> None:
         """Initialize with a pre-populated import tracker."""
         self._tracker = import_tracker
-        self.errors: list[InheritanceError] = []
+        self.errors: list[ABCPurityError] = []
         self._abc_local_names = self._resolve_names_for("ABC")
         self._abcmeta_local_names = self._resolve_names_for("ABCMeta")
         self._abstractmethod_local_names = self._resolve_names_for("abstractmethod")
@@ -288,11 +304,12 @@ class ABCPurityVisitor(ast.NodeVisitor):
 
                 # Concrete method found - flag it
                 self.errors.append(
-                    InheritanceError(
+                    ABCPurityError(
                         line=item.lineno,
                         col=item.col_offset,
                         code=INH002,
-                        message_kwargs={"cls": node.name, "method": item.name},
+                        cls=node.name,
+                        method=item.name,
                     ),
                 )
 

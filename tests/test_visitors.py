@@ -9,6 +9,7 @@ import pytest
 from flake8_inheritance.codes import INH001, INH002
 from flake8_inheritance.visitors import (
     RELATIVE_SENTINEL,
+    ABCPurityError,
     ABCPurityVisitor,
     ImportTracker,
     InheritanceError,
@@ -98,7 +99,7 @@ def collect_errors(
 
 def flagged_bases(errors: list[InheritanceError]) -> list[str]:
     """Return just the base names from a list of INH001 errors."""
-    return [e.message_kwargs["base"] for e in errors]
+    return [e.base for e in errors]
 
 
 # ---------------------------------------------------------------------------
@@ -363,7 +364,7 @@ class Child(SomeUnknownBase):
 # ---------------------------------------------------------------------------
 
 
-def collect_inh002_errors(source: str) -> list[InheritanceError]:
+def collect_inh002_errors(source: str) -> list[ABCPurityError]:
     """Parse source, run ImportTracker + ABCPurityVisitor, return errors."""
     tree = ast.parse(source)
     tracker = ImportTracker()
@@ -373,9 +374,9 @@ def collect_inh002_errors(source: str) -> list[InheritanceError]:
     return visitor.errors
 
 
-def flagged_methods(errors: list[InheritanceError]) -> list[str]:
+def flagged_methods(errors: list[ABCPurityError]) -> list[str]:
     """Return just the method names from INH002 errors."""
-    return [e.message_kwargs["method"] for e in errors]
+    return [e.method for e in errors]
 
 
 # ---------------------------------------------------------------------------
@@ -429,8 +430,8 @@ class MyABC(ABC):
         errors = collect_inh002_errors(source)
         assert len(errors) == 1
         assert errors[0].code is INH002
-        assert errors[0].message_kwargs["method"] == "concrete_helper"
-        assert errors[0].message_kwargs["cls"] == "MyABC"
+        assert errors[0].method == "concrete_helper"
+        assert errors[0].cls == "MyABC"
 
     def test_multiple_concrete_methods_flagged(self) -> None:
         source = """\
@@ -784,3 +785,50 @@ class MyABC(ABC):
         assert "MyABC" in formatted
         assert "concrete_helper" in formatted
         assert formatted.startswith("INH002")
+
+
+# ---------------------------------------------------------------------------
+# Error object immutability and hashability
+# ---------------------------------------------------------------------------
+
+
+class TestErrorImmutability:
+    """Error objects must be truly immutable and hashable."""
+
+    def test_inh001_error_is_hashable(self) -> None:
+        errors = collect_errors("class A:\n    pass\n\nclass B(A):\n    pass\n")
+        assert len(errors) == 1
+        # Must be hashable (usable in sets and as dict keys)
+        hash(errors[0])
+        assert len({errors[0], errors[0]}) == 1
+
+    def test_inh002_error_is_hashable(self) -> None:
+        source = """\
+from abc import ABC
+
+class MyABC(ABC):
+    def foo(self):
+        return 1
+"""
+        errors = collect_inh002_errors(source)
+        assert len(errors) == 1
+        # Must be hashable (usable in sets and as dict keys)
+        hash(errors[0])
+        assert len({errors[0], errors[0]}) == 1
+
+    def test_inh001_error_is_immutable(self) -> None:
+        errors = collect_errors("class A:\n    pass\n\nclass B(A):\n    pass\n")
+        with pytest.raises(AttributeError):
+            errors[0].line = 99  # type: ignore[misc]
+
+    def test_inh002_error_is_immutable(self) -> None:
+        source = """\
+from abc import ABC
+
+class MyABC(ABC):
+    def foo(self):
+        return 1
+"""
+        errors = collect_inh002_errors(source)
+        with pytest.raises(AttributeError):
+            errors[0].line = 99  # type: ignore[misc]
