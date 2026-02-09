@@ -45,8 +45,8 @@ class ImportTracker(ast.NodeVisitor):
         source_module = self.imports[local_name]
         if source_module == RELATIVE_SENTINEL:
             return "same_file"
-        if source_module in sys.stdlib_module_names:
-            return "stdlib"
         if self._project_package and source_module == self._project_package:
             return "internal"
+        if source_module in sys.stdlib_module_names:
+            return "stdlib"
         return "external"

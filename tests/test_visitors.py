@@ -56,3 +56,10 @@ from . import local_mod
     assert tracker.classify("internal_pkg") == "internal"
     assert tracker.classify("local_mod") == "same_file"
     assert tracker.classify("missing") == "unknown"
+
+
+def test_project_package_overrides_stdlib_name() -> None:
+    tracker = ImportTracker(project_package="email")
+    tracker.visit(ast.parse("import email"))
+
+    assert tracker.classify("email") == "internal"
