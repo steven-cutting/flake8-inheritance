@@ -14,21 +14,22 @@ RELATIVE_SENTINEL: Final[str] = "__relative__"
 
 @dataclass(frozen=True)
 class InheritanceError:
-    """A located error produced by the inheritance visitor."""
+    """A located error produced by the inheritance visitor.
+
+    Each error carries a ``message_kwargs`` dict whose keys match
+    the format placeholders in the associated :class:`ErrorCode`.
+    For example, INH001 uses ``{"base": "ClassName"}`` while INH002
+    uses ``{"cls": "MyABC", "method": "concrete_helper"}``.
+    """
 
     line: int
     col: int
     code: ErrorCode
-    base_name: str
-    class_name: str = ""
+    message_kwargs: dict[str, str]
 
     def format(self) -> str:
         """Return the full flake8 error string."""
-        return self.code.format(
-            base=self.base_name,
-            cls=self.class_name,
-            method=self.base_name,
-        )
+        return self.code.format(**self.message_kwargs)
 
     def as_flake8_tuple(self) -> tuple[int, int, str, type]:
         """Return the ``(line, col, message, type)`` tuple flake8 expects."""
@@ -150,7 +151,7 @@ class InheritanceVisitor(ast.NodeVisitor):
                         line=node.lineno,
                         col=node.col_offset,
                         code=INH001,
-                        base_name=base_name,
+                        message_kwargs={"base": base_name},
                     )
                 )
                 continue
@@ -162,22 +163,11 @@ class InheritanceVisitor(ast.NodeVisitor):
                         line=node.lineno,
                         col=node.col_offset,
                         code=INH001,
-                        base_name=base_name,
+                        message_kwargs={"base": base_name},
                     )
                 )
 
         self.generic_visit(node)
-
-
-def _get_decorator_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
-    """Return the set of simple decorator names on a function node."""
-    names: set[str] = set()
-    for decorator in node.decorator_list:
-        if isinstance(decorator, ast.Name):
-            names.add(decorator.id)
-        elif isinstance(decorator, ast.Attribute):
-            names.add(decorator.attr)
-    return names
 
 
 class ABCPurityVisitor(ast.NodeVisitor):
@@ -302,8 +292,7 @@ class ABCPurityVisitor(ast.NodeVisitor):
                         line=item.lineno,
                         col=item.col_offset,
                         code=INH002,
-                        base_name=item.name,
-                        class_name=node.name,
+                        message_kwargs={"cls": node.name, "method": item.name},
                     ),
                 )
 

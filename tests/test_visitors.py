@@ -97,8 +97,8 @@ def collect_errors(
 
 
 def flagged_bases(errors: list[InheritanceError]) -> list[str]:
-    """Return just the base names from a list of errors."""
-    return [e.base_name for e in errors]
+    """Return just the base names from a list of INH001 errors."""
+    return [e.message_kwargs["base"] for e in errors]
 
 
 # ---------------------------------------------------------------------------
@@ -374,8 +374,8 @@ def collect_inh002_errors(source: str) -> list[InheritanceError]:
 
 
 def flagged_methods(errors: list[InheritanceError]) -> list[str]:
-    """Return just the base names (method names) from INH002 errors."""
-    return [e.base_name for e in errors]
+    """Return just the method names from INH002 errors."""
+    return [e.message_kwargs["method"] for e in errors]
 
 
 # ---------------------------------------------------------------------------
@@ -429,7 +429,8 @@ class MyABC(ABC):
         errors = collect_inh002_errors(source)
         assert len(errors) == 1
         assert errors[0].code is INH002
-        assert errors[0].base_name == "concrete_helper"
+        assert errors[0].message_kwargs["method"] == "concrete_helper"
+        assert errors[0].message_kwargs["cls"] == "MyABC"
 
     def test_multiple_concrete_methods_flagged(self) -> None:
         source = """\
