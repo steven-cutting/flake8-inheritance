@@ -20,6 +20,11 @@ def test_import_statement_maps_module_name() -> None:
     assert tracker.imports == {"foo": "foo"}
 
 
+def test_import_statement_with_alias_tracks_local_name() -> None:
+    tracker = track_imports("import foo.bar as baz")
+    assert tracker.imports == {"baz": "foo"}
+
+
 def test_from_import_maps_to_top_level_package() -> None:
     tracker = track_imports("from foo.bar import Baz")
     assert tracker.imports == {"Baz": "foo"}
