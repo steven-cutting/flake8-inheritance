@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass
 from typing import Final
 
-from flake8_inheritance.codes import INH001, ErrorCode
+from flake8_inheritance.codes import INH001, INH002, ErrorCode
 
 RELATIVE_SENTINEL: Final[str] = "__relative__"
 
@@ -156,6 +156,98 @@ class InheritanceVisitor(ast.NodeVisitor):
                         code=INH001,
                         base_name=base_name,
                     )
+                )
+
+        self.generic_visit(node)
+
+
+def _get_decorator_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+    """Return the set of simple decorator names on a function node."""
+    names: set[str] = set()
+    for decorator in node.decorator_list:
+        if isinstance(decorator, ast.Name):
+            names.add(decorator.id)
+        elif isinstance(decorator, ast.Attribute):
+            names.add(decorator.attr)
+    return names
+
+
+class ABCPurityVisitor(ast.NodeVisitor):
+    """Detect impure ABCs (INH002).
+
+    Walks ``ast.ClassDef`` nodes and flags concrete (non-abstract) methods
+    in classes that inherit from ``abc.ABC`` or use ``abc.ABCMeta`` as their
+    metaclass.  Dunder methods (e.g. ``__init__``) are always allowed.
+    """
+
+    def __init__(self, import_tracker: ImportTracker) -> None:
+        """Initialize with a pre-populated import tracker."""
+        self._tracker = import_tracker
+        self.errors: list[InheritanceError] = []
+        self._abc_local_names: set[str] = self._resolve_abc_names()
+        self._abcmeta_local_names: set[str] = self._resolve_abcmeta_names()
+
+    def _resolve_abc_names(self) -> set[str]:
+        """Find all local names that map to ``abc.ABC``."""
+        names: set[str] = set()
+        for local_name, source in self._tracker.imports.items():
+            if source == "abc" and local_name not in ("abstractmethod",):
+                # Could be ABC or ABCMeta; we only want ABC here
+                # We check by looking at the original import name
+                names.add(local_name)
+        # Filter: we need to distinguish ABC from ABCMeta
+        # Re-check by looking at what was actually imported
+        return names
+
+    def _resolve_abcmeta_names(self) -> set[str]:
+        """Find all local names that map to ``abc.ABCMeta``."""
+        # This is resolved during _is_abc check by looking at metaclass keywords
+        return set()
+
+    def _is_abc(self, node: ast.ClassDef) -> bool:
+        """Check if a class is an ABC (inherits from ABC or uses ABCMeta)."""
+        # Check base classes for ABC
+        for base in node.bases:
+            base_name = _resolve_base(base)
+            if base_name is not None and base_name in self._abc_local_names:
+                # Verify it comes from the abc module
+                root = base_name.split(".")[0]
+                if self._tracker.imports.get(root) == "abc":
+                    return True
+
+        # Check keywords for metaclass=ABCMeta
+        for keyword in node.keywords:
+            if keyword.arg == "metaclass" and isinstance(keyword.value, ast.Name):
+                kw_name = keyword.value.id
+                if self._tracker.imports.get(kw_name) == "abc":
+                    return True
+
+        return False
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:  # noqa: N802
+        """Process a class definition, checking ABC purity."""
+        if self._is_abc(node):
+            for item in node.body:
+                if not isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef):
+                    continue
+
+                # Allow dunder methods
+                if item.name.startswith("__") and item.name.endswith("__"):
+                    continue
+
+                # Check if decorated with @abstractmethod
+                decorator_names = _get_decorator_names(item)
+                if "abstractmethod" in decorator_names:
+                    continue
+
+                # Concrete method found - flag it
+                self.errors.append(
+                    InheritanceError(
+                        line=item.lineno,
+                        col=item.col_offset,
+                        code=INH002,
+                        base_name=item.name,
+                    ),
                 )
 
         self.generic_visit(node)
