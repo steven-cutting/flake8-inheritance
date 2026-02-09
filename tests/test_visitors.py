@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ast
 
-from flake8_inheritance.visitors import ImportTracker
+from flake8_inheritance.visitors import RELATIVE_SENTINEL, ImportTracker
 
 
 def track_imports(source: str) -> ImportTracker:
@@ -37,12 +37,12 @@ def test_from_import_with_alias_tracks_alias_name() -> None:
 
 def test_relative_import_records_relative_sentinel() -> None:
     tracker = track_imports("from .models import Base")
-    assert tracker.imports == {"Base": "__relative__"}
+    assert tracker.imports == {"Base": RELATIVE_SENTINEL}
 
 
 def test_relative_import_without_module_records_relative_sentinel() -> None:
     tracker = track_imports("from . import utils")
-    assert tracker.imports == {"utils": "__relative__"}
+    assert tracker.imports == {"utils": RELATIVE_SENTINEL}
 
 
 def test_classification_categories() -> None:
