@@ -20,10 +20,15 @@ class InheritanceError:
     col: int
     code: ErrorCode
     base_name: str
+    class_name: str = ""
 
     def format(self) -> str:
         """Return the full flake8 error string."""
-        return self.code.format(base=self.base_name)
+        return self.code.format(
+            base=self.base_name,
+            cls=self.class_name,
+            method=self.base_name,
+        )
 
     def as_flake8_tuple(self) -> tuple[int, int, str, type]:
         """Return the ``(line, col, message, type)`` tuple flake8 expects."""
@@ -36,6 +41,7 @@ class ImportTracker(ast.NodeVisitor):
     def __init__(self, project_package: str | None = None) -> None:
         """Initialize tracker with an optional project package name."""
         self.imports: dict[str, str] = {}
+        self.original_names: dict[str, str] = {}
         self._project_package = project_package
 
     def visit_Import(self, node: ast.Import) -> None:  # noqa: N802
@@ -44,6 +50,7 @@ class ImportTracker(ast.NodeVisitor):
             top_level = alias.name.split(".")[0]
             local_name = alias.asname or top_level
             self.imports[local_name] = top_level
+            self.original_names[local_name] = alias.name
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:  # noqa: N802
         """Record modules imported with ``from ... import ...`` statements."""
@@ -57,6 +64,7 @@ class ImportTracker(ast.NodeVisitor):
         for alias in node.names:
             local_name = alias.asname or alias.name
             self.imports[local_name] = source_module
+            self.original_names[local_name] = alias.name
 
     def classify(self, local_name: str) -> str:
         """Return classification for a local import name."""
@@ -184,44 +192,93 @@ class ABCPurityVisitor(ast.NodeVisitor):
         """Initialize with a pre-populated import tracker."""
         self._tracker = import_tracker
         self.errors: list[InheritanceError] = []
-        self._abc_local_names: set[str] = self._resolve_abc_names()
-        self._abcmeta_local_names: set[str] = self._resolve_abcmeta_names()
+        self._abc_local_names = self._resolve_names_for("ABC")
+        self._abcmeta_local_names = self._resolve_names_for("ABCMeta")
+        self._abstractmethod_local_names = self._resolve_names_for("abstractmethod")
+        self._abc_module_aliases = self._resolve_abc_module_aliases()
 
-    def _resolve_abc_names(self) -> set[str]:
-        """Find all local names that map to ``abc.ABC``."""
+    def _resolve_names_for(self, original: str) -> set[str]:
+        """Find all local names that were imported as *original* from ``abc``."""
         names: set[str] = set()
         for local_name, source in self._tracker.imports.items():
-            if source == "abc" and local_name not in ("abstractmethod",):
-                # Could be ABC or ABCMeta; we only want ABC here
-                # We check by looking at the original import name
+            if source == "abc" and self._tracker.original_names.get(local_name) == original:
                 names.add(local_name)
-        # Filter: we need to distinguish ABC from ABCMeta
-        # Re-check by looking at what was actually imported
         return names
 
-    def _resolve_abcmeta_names(self) -> set[str]:
-        """Find all local names that map to ``abc.ABCMeta``."""
-        # This is resolved during _is_abc check by looking at metaclass keywords
-        return set()
+    def _resolve_abc_module_aliases(self) -> set[str]:
+        """Find local names that are module-level imports of ``abc``.
+
+        Handles ``import abc`` and ``import abc as a``.
+        """
+        names: set[str] = set()
+        for local_name, source in self._tracker.imports.items():
+            if source == "abc" and self._tracker.original_names.get(local_name) == "abc":
+                names.add(local_name)
+        return names
+
+    def _is_abc_base(self, base_name: str) -> bool:
+        """Check if a resolved base name refers to ``abc.ABC``.
+
+        Handles both direct (``ABC``) and module-qualified (``abc.ABC``)
+        forms, including aliases.
+        """
+        # Direct: from abc import ABC [as X]
+        if base_name in self._abc_local_names:
+            return True
+        # Module-qualified: import abc [as a]; class X(a.ABC)
+        parts = base_name.split(".")
+        return (
+            len(parts) == 2  # noqa: PLR2004
+            and parts[0] in self._abc_module_aliases
+            and parts[1] == "ABC"
+        )
+
+    def _is_abcmeta_keyword(self, keyword: ast.keyword) -> bool:
+        """Check if a class keyword is ``metaclass=ABCMeta`` (any form)."""
+        if keyword.arg != "metaclass":
+            return False
+        # Direct: from abc import ABCMeta [as X]; metaclass=X
+        if isinstance(keyword.value, ast.Name):
+            return keyword.value.id in self._abcmeta_local_names
+        # Module-qualified: import abc [as a]; metaclass=a.ABCMeta
+        if isinstance(keyword.value, ast.Attribute):
+            resolved = _resolve_base(keyword.value)
+            if resolved is not None:
+                parts = resolved.split(".")
+                if (
+                    len(parts) == 2  # noqa: PLR2004
+                    and parts[0] in self._abc_module_aliases
+                    and parts[1] == "ABCMeta"
+                ):
+                    return True
+        return False
 
     def _is_abc(self, node: ast.ClassDef) -> bool:
         """Check if a class is an ABC (inherits from ABC or uses ABCMeta)."""
-        # Check base classes for ABC
         for base in node.bases:
             base_name = _resolve_base(base)
-            if base_name is not None and base_name in self._abc_local_names:
-                # Verify it comes from the abc module
-                root = base_name.split(".")[0]
-                if self._tracker.imports.get(root) == "abc":
-                    return True
+            if base_name is not None and self._is_abc_base(base_name):
+                return True
+        return any(self._is_abcmeta_keyword(kw) for kw in node.keywords)
 
-        # Check keywords for metaclass=ABCMeta
-        for keyword in node.keywords:
-            if keyword.arg == "metaclass" and isinstance(keyword.value, ast.Name):
-                kw_name = keyword.value.id
-                if self._tracker.imports.get(kw_name) == "abc":
+    def _is_abstractmethod(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+        """Check if a method is decorated with ``@abstractmethod`` (any form)."""
+        for decorator in node.decorator_list:
+            # Direct: @abstractmethod or @am (alias)
+            if isinstance(decorator, ast.Name):
+                if decorator.id in self._abstractmethod_local_names:
                     return True
-
+            # Module-qualified: @abc.abstractmethod or @a.abstractmethod
+            elif isinstance(decorator, ast.Attribute):
+                resolved = _resolve_base(decorator)
+                if resolved is not None:
+                    parts = resolved.split(".")
+                    if (
+                        len(parts) == 2  # noqa: PLR2004
+                        and parts[0] in self._abc_module_aliases
+                        and parts[1] == "abstractmethod"
+                    ):
+                        return True
         return False
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:  # noqa: N802
@@ -236,8 +293,7 @@ class ABCPurityVisitor(ast.NodeVisitor):
                     continue
 
                 # Check if decorated with @abstractmethod
-                decorator_names = _get_decorator_names(item)
-                if "abstractmethod" in decorator_names:
+                if self._is_abstractmethod(item):
                     continue
 
                 # Concrete method found - flag it
@@ -247,6 +303,7 @@ class ABCPurityVisitor(ast.NodeVisitor):
                         col=item.col_offset,
                         code=INH002,
                         base_name=item.name,
+                        class_name=node.name,
                     ),
                 )
 

@@ -647,3 +647,139 @@ class MyDict(OrderedDict):
         return 42
 """
         assert collect_inh002_errors(source) == []
+
+
+class TestINH002ModuleQualifiedABC:
+    """Module-qualified ABC usage: ``import abc; class X(abc.ABC): ...``."""
+
+    def test_import_abc_dot_abc_detected(self) -> None:
+        source = """\
+import abc
+
+class MyABC(abc.ABC):
+    @abc.abstractmethod
+    def do_thing(self):
+        pass
+
+    def concrete_helper(self):
+        return 42
+"""
+        errors = collect_inh002_errors(source)
+        assert flagged_methods(errors) == ["concrete_helper"]
+
+    def test_import_abc_dot_abc_pure_passes(self) -> None:
+        source = """\
+import abc
+
+class MyABC(abc.ABC):
+    @abc.abstractmethod
+    def do_thing(self):
+        pass
+"""
+        assert collect_inh002_errors(source) == []
+
+    def test_import_abc_dot_abcmeta_metaclass(self) -> None:
+        source = """\
+import abc
+
+class MyABC(metaclass=abc.ABCMeta):
+    @abc.abstractmethod
+    def do_thing(self):
+        pass
+
+    def concrete_helper(self):
+        return 42
+"""
+        errors = collect_inh002_errors(source)
+        assert flagged_methods(errors) == ["concrete_helper"]
+
+    def test_import_abc_aliased_module(self) -> None:
+        """``import abc as a; class X(a.ABC): ...``."""
+        source = """\
+import abc as a
+
+class MyABC(a.ABC):
+    @a.abstractmethod
+    def do_thing(self):
+        pass
+
+    def concrete_helper(self):
+        return 42
+"""
+        errors = collect_inh002_errors(source)
+        assert flagged_methods(errors) == ["concrete_helper"]
+
+
+class TestINH002ABCMetaFalsePositives:
+    """ABCMeta in base classes should not be treated as ABC base."""
+
+    def test_class_inheriting_from_abcmeta_not_treated_as_abc_base(self) -> None:
+        """``class X(ABCMeta)`` is a metaclass def, not an ABC."""
+        source = """\
+from abc import ABCMeta
+
+class MyMeta(ABCMeta):
+    def some_method(self):
+        return 42
+"""
+        assert collect_inh002_errors(source) == []
+
+    def test_metaclass_abstractmethod_not_abc(self) -> None:
+        """``metaclass=abstractmethod`` should not be treated as ABC."""
+        source = """\
+from abc import abstractmethod
+
+class MyClass(metaclass=abstractmethod):
+    def some_method(self):
+        return 42
+"""
+        assert collect_inh002_errors(source) == []
+
+
+class TestINH002AbstractmethodAliases:
+    """Aliased abstractmethod imports should be resolved."""
+
+    def test_abstractmethod_alias_recognized(self) -> None:
+        source = """\
+from abc import ABC, abstractmethod as am
+
+class MyABC(ABC):
+    @am
+    def do_thing(self):
+        pass
+"""
+        assert collect_inh002_errors(source) == []
+
+    def test_module_qualified_abstractmethod_recognized(self) -> None:
+        source = """\
+import abc
+
+class MyABC(abc.ABC):
+    @abc.abstractmethod
+    def do_thing(self):
+        pass
+"""
+        assert collect_inh002_errors(source) == []
+
+
+class TestINH002ErrorFormat:
+    """INH002 errors should format correctly with class and method names."""
+
+    def test_error_format_includes_class_and_method(self) -> None:
+        source = """\
+from abc import ABC, abstractmethod
+
+class MyABC(ABC):
+    @abstractmethod
+    def do_thing(self):
+        pass
+
+    def concrete_helper(self):
+        return 42
+"""
+        errors = collect_inh002_errors(source)
+        assert len(errors) == 1
+        formatted = errors[0].format()
+        assert "MyABC" in formatted
+        assert "concrete_helper" in formatted
+        assert formatted.startswith("INH002")
