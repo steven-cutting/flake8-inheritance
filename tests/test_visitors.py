@@ -63,3 +63,11 @@ def test_project_package_overrides_stdlib_name() -> None:
     tracker.visit(ast.parse("import email"))
 
     assert tracker.classify("email") == "internal"
+
+
+def test_empty_import_from_module_classifies_unknown() -> None:
+    tracker = ImportTracker()
+    node = ast.ImportFrom(module=None, names=[ast.alias(name="Thing")], level=0)
+    tracker.visit_ImportFrom(node)
+
+    assert tracker.classify("Thing") == "unknown"

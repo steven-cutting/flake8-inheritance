@@ -43,6 +43,8 @@ class ImportTracker(ast.NodeVisitor):
             return "unknown"
 
         source_module = self.imports[local_name]
+        if not source_module:
+            return "unknown"
         if source_module == RELATIVE_SENTINEL:
             return "same_file"
         if self._project_package and source_module == self._project_package:
