@@ -6,9 +6,11 @@ import ast
 
 import pytest
 
-from flake8_inheritance.codes import INH001
+from flake8_inheritance.codes import INH001, INH002
 from flake8_inheritance.visitors import (
     RELATIVE_SENTINEL,
+    ABCPurityError,
+    ABCPurityVisitor,
     ImportTracker,
     InheritanceError,
     InheritanceVisitor,
@@ -96,8 +98,8 @@ def collect_errors(
 
 
 def flagged_bases(errors: list[InheritanceError]) -> list[str]:
-    """Return just the base names from a list of errors."""
-    return [e.base_name for e in errors]
+    """Return just the base names from a list of INH001 errors."""
+    return [e.base for e in errors]
 
 
 # ---------------------------------------------------------------------------
@@ -355,3 +357,478 @@ class Child(SomeUnknownBase):
     pass
 """
         assert collect_errors(source) == []
+
+
+# ---------------------------------------------------------------------------
+# Helpers for INH002 tests
+# ---------------------------------------------------------------------------
+
+
+def collect_inh002_errors(source: str) -> list[ABCPurityError]:
+    """Parse source, run ImportTracker + ABCPurityVisitor, return errors."""
+    tree = ast.parse(source)
+    tracker = ImportTracker()
+    tracker.visit(tree)
+    visitor = ABCPurityVisitor(import_tracker=tracker)
+    visitor.visit(tree)
+    return visitor.errors
+
+
+def flagged_methods(errors: list[ABCPurityError]) -> list[str]:
+    """Return just the method names from INH002 errors."""
+    return [e.method for e in errors]
+
+
+# ---------------------------------------------------------------------------
+# INH002 — detect impure ABCs (concrete methods in abstract base classes)
+# ---------------------------------------------------------------------------
+
+
+class TestINH002PureABC:
+    """Pure ABCs (only abstract methods) should not be flagged."""
+
+    def test_pure_abc_passes(self) -> None:
+        source = """\
+from abc import ABC, abstractmethod
+
+class MyABC(ABC):
+    @abstractmethod
+    def do_thing(self):
+        pass
+
+    @abstractmethod
+    def do_other(self):
+        pass
+"""
+        assert collect_inh002_errors(source) == []
+
+    def test_empty_abc_passes(self) -> None:
+        source = """\
+from abc import ABC
+
+class MyABC(ABC):
+    pass
+"""
+        assert collect_inh002_errors(source) == []
+
+
+class TestINH002ConcreteMethodFlagged:
+    """Concrete methods in ABCs should be flagged."""
+
+    def test_concrete_method_in_abc_flagged(self) -> None:
+        source = """\
+from abc import ABC, abstractmethod
+
+class MyABC(ABC):
+    @abstractmethod
+    def do_thing(self):
+        pass
+
+    def concrete_helper(self):
+        return 42
+"""
+        errors = collect_inh002_errors(source)
+        assert len(errors) == 1
+        assert errors[0].code is INH002
+        assert errors[0].method == "concrete_helper"
+        assert errors[0].cls == "MyABC"
+
+    def test_multiple_concrete_methods_flagged(self) -> None:
+        source = """\
+from abc import ABC, abstractmethod
+
+class MyABC(ABC):
+    @abstractmethod
+    def do_thing(self):
+        pass
+
+    def helper_one(self):
+        return 1
+
+    def helper_two(self):
+        return 2
+"""
+        errors = collect_inh002_errors(source)
+        assert flagged_methods(errors) == ["helper_one", "helper_two"]
+
+    def test_all_concrete_no_abstract_flagged(self) -> None:
+        """An ABC with no abstract methods at all flags every method."""
+        source = """\
+from abc import ABC
+
+class MyABC(ABC):
+    def foo(self):
+        return 1
+
+    def bar(self):
+        return 2
+"""
+        errors = collect_inh002_errors(source)
+        assert flagged_methods(errors) == ["foo", "bar"]
+
+
+class TestINH002InitAllowed:
+    """__init__ should be allowed by default in ABCs."""
+
+    def test_init_allowed(self) -> None:
+        source = """\
+from abc import ABC, abstractmethod
+
+class MyABC(ABC):
+    def __init__(self, name):
+        self.name = name
+
+    @abstractmethod
+    def do_thing(self):
+        pass
+"""
+        assert collect_inh002_errors(source) == []
+
+    def test_dunder_methods_allowed(self) -> None:
+        """Dunder methods like __init__, __repr__ etc. should be allowed."""
+        source = """\
+from abc import ABC, abstractmethod
+
+class MyABC(ABC):
+    def __init__(self):
+        pass
+
+    def __repr__(self):
+        return "MyABC()"
+
+    @abstractmethod
+    def do_thing(self):
+        pass
+"""
+        assert collect_inh002_errors(source) == []
+
+
+class TestINH002DecoratorCombinations:
+    """@staticmethod + @abstractmethod and @classmethod + @abstractmethod pass."""
+
+    def test_staticmethod_abstractmethod_passes(self) -> None:
+        source = """\
+from abc import ABC, abstractmethod
+
+class MyABC(ABC):
+    @staticmethod
+    @abstractmethod
+    def do_thing():
+        pass
+"""
+        assert collect_inh002_errors(source) == []
+
+    def test_classmethod_abstractmethod_passes(self) -> None:
+        source = """\
+from abc import ABC, abstractmethod
+
+class MyABC(ABC):
+    @classmethod
+    @abstractmethod
+    def do_thing(cls):
+        pass
+"""
+        assert collect_inh002_errors(source) == []
+
+    def test_plain_staticmethod_flagged(self) -> None:
+        """A staticmethod without @abstractmethod is concrete."""
+        source = """\
+from abc import ABC, abstractmethod
+
+class MyABC(ABC):
+    @abstractmethod
+    def do_thing(self):
+        pass
+
+    @staticmethod
+    def helper():
+        return 42
+"""
+        errors = collect_inh002_errors(source)
+        assert flagged_methods(errors) == ["helper"]
+
+    def test_plain_classmethod_flagged(self) -> None:
+        """A classmethod without @abstractmethod is concrete."""
+        source = """\
+from abc import ABC, abstractmethod
+
+class MyABC(ABC):
+    @abstractmethod
+    def do_thing(self):
+        pass
+
+    @classmethod
+    def create(cls):
+        return cls()
+"""
+        errors = collect_inh002_errors(source)
+        assert flagged_methods(errors) == ["create"]
+
+
+class TestINH002ABCMetaDetection:
+    """ABCMeta metaclass should be detected as ABC."""
+
+    def test_abcmeta_metaclass_detected(self) -> None:
+        source = """\
+from abc import ABCMeta, abstractmethod
+
+class MyABC(metaclass=ABCMeta):
+    @abstractmethod
+    def do_thing(self):
+        pass
+
+    def concrete_helper(self):
+        return 42
+"""
+        errors = collect_inh002_errors(source)
+        assert flagged_methods(errors) == ["concrete_helper"]
+
+    def test_pure_abcmeta_passes(self) -> None:
+        source = """\
+from abc import ABCMeta, abstractmethod
+
+class MyABC(metaclass=ABCMeta):
+    @abstractmethod
+    def do_thing(self):
+        pass
+"""
+        assert collect_inh002_errors(source) == []
+
+
+class TestINH002ABCAlias:
+    """ABC imported with an alias should still be detected."""
+
+    def test_abc_alias_detected(self) -> None:
+        source = """\
+from abc import ABC as AbstractBase, abstractmethod
+
+class MyABC(AbstractBase):
+    @abstractmethod
+    def do_thing(self):
+        pass
+
+    def concrete_helper(self):
+        return 42
+"""
+        errors = collect_inh002_errors(source)
+        assert flagged_methods(errors) == ["concrete_helper"]
+
+    def test_abcmeta_alias_detected(self) -> None:
+        source = """\
+from abc import ABCMeta as Meta, abstractmethod
+
+class MyABC(metaclass=Meta):
+    @abstractmethod
+    def do_thing(self):
+        pass
+
+    def concrete_helper(self):
+        return 42
+"""
+        errors = collect_inh002_errors(source)
+        assert flagged_methods(errors) == ["concrete_helper"]
+
+
+class TestINH002NonABCIgnored:
+    """Non-ABC classes should not be checked for method purity."""
+
+    def test_regular_class_ignored(self) -> None:
+        source = """\
+class RegularClass:
+    def method(self):
+        return 42
+"""
+        assert collect_inh002_errors(source) == []
+
+    def test_class_inheriting_from_non_abc(self) -> None:
+        source = """\
+from collections import OrderedDict
+
+class MyDict(OrderedDict):
+    def custom_method(self):
+        return 42
+"""
+        assert collect_inh002_errors(source) == []
+
+
+class TestINH002ModuleQualifiedABC:
+    """Module-qualified ABC usage: ``import abc; class X(abc.ABC): ...``."""
+
+    def test_import_abc_dot_abc_detected(self) -> None:
+        source = """\
+import abc
+
+class MyABC(abc.ABC):
+    @abc.abstractmethod
+    def do_thing(self):
+        pass
+
+    def concrete_helper(self):
+        return 42
+"""
+        errors = collect_inh002_errors(source)
+        assert flagged_methods(errors) == ["concrete_helper"]
+
+    def test_import_abc_dot_abc_pure_passes(self) -> None:
+        source = """\
+import abc
+
+class MyABC(abc.ABC):
+    @abc.abstractmethod
+    def do_thing(self):
+        pass
+"""
+        assert collect_inh002_errors(source) == []
+
+    def test_import_abc_dot_abcmeta_metaclass(self) -> None:
+        source = """\
+import abc
+
+class MyABC(metaclass=abc.ABCMeta):
+    @abc.abstractmethod
+    def do_thing(self):
+        pass
+
+    def concrete_helper(self):
+        return 42
+"""
+        errors = collect_inh002_errors(source)
+        assert flagged_methods(errors) == ["concrete_helper"]
+
+    def test_import_abc_aliased_module(self) -> None:
+        """``import abc as a; class X(a.ABC): ...``."""
+        source = """\
+import abc as a
+
+class MyABC(a.ABC):
+    @a.abstractmethod
+    def do_thing(self):
+        pass
+
+    def concrete_helper(self):
+        return 42
+"""
+        errors = collect_inh002_errors(source)
+        assert flagged_methods(errors) == ["concrete_helper"]
+
+
+class TestINH002ABCMetaFalsePositives:
+    """ABCMeta in base classes should not be treated as ABC base."""
+
+    def test_class_inheriting_from_abcmeta_not_treated_as_abc_base(self) -> None:
+        """``class X(ABCMeta)`` is a metaclass def, not an ABC."""
+        source = """\
+from abc import ABCMeta
+
+class MyMeta(ABCMeta):
+    def some_method(self):
+        return 42
+"""
+        assert collect_inh002_errors(source) == []
+
+    def test_metaclass_abstractmethod_not_abc(self) -> None:
+        """``metaclass=abstractmethod`` should not be treated as ABC."""
+        source = """\
+from abc import abstractmethod
+
+class MyClass(metaclass=abstractmethod):
+    def some_method(self):
+        return 42
+"""
+        assert collect_inh002_errors(source) == []
+
+
+class TestINH002AbstractmethodAliases:
+    """Aliased abstractmethod imports should be resolved."""
+
+    def test_abstractmethod_alias_recognized(self) -> None:
+        source = """\
+from abc import ABC, abstractmethod as am
+
+class MyABC(ABC):
+    @am
+    def do_thing(self):
+        pass
+"""
+        assert collect_inh002_errors(source) == []
+
+    def test_module_qualified_abstractmethod_recognized(self) -> None:
+        source = """\
+import abc
+
+class MyABC(abc.ABC):
+    @abc.abstractmethod
+    def do_thing(self):
+        pass
+"""
+        assert collect_inh002_errors(source) == []
+
+
+class TestINH002ErrorFormat:
+    """INH002 errors should format correctly with class and method names."""
+
+    def test_error_format_includes_class_and_method(self) -> None:
+        source = """\
+from abc import ABC, abstractmethod
+
+class MyABC(ABC):
+    @abstractmethod
+    def do_thing(self):
+        pass
+
+    def concrete_helper(self):
+        return 42
+"""
+        errors = collect_inh002_errors(source)
+        assert len(errors) == 1
+        formatted = errors[0].format()
+        assert "MyABC" in formatted
+        assert "concrete_helper" in formatted
+        assert formatted.startswith("INH002")
+
+
+# ---------------------------------------------------------------------------
+# Error object immutability and hashability
+# ---------------------------------------------------------------------------
+
+
+class TestErrorImmutability:
+    """Error objects must be truly immutable and hashable."""
+
+    def test_inh001_error_is_hashable(self) -> None:
+        errors = collect_errors("class A:\n    pass\n\nclass B(A):\n    pass\n")
+        assert len(errors) == 1
+        # Must be hashable (usable in sets and as dict keys)
+        hash(errors[0])
+        assert len({errors[0], errors[0]}) == 1
+
+    def test_inh002_error_is_hashable(self) -> None:
+        source = """\
+from abc import ABC
+
+class MyABC(ABC):
+    def foo(self):
+        return 1
+"""
+        errors = collect_inh002_errors(source)
+        assert len(errors) == 1
+        # Must be hashable (usable in sets and as dict keys)
+        hash(errors[0])
+        assert len({errors[0], errors[0]}) == 1
+
+    def test_inh001_error_is_immutable(self) -> None:
+        errors = collect_errors("class A:\n    pass\n\nclass B(A):\n    pass\n")
+        with pytest.raises(AttributeError):
+            errors[0].line = 99  # type: ignore[misc]
+
+    def test_inh002_error_is_immutable(self) -> None:
+        source = """\
+from abc import ABC
+
+class MyABC(ABC):
+    def foo(self):
+        return 1
+"""
+        errors = collect_inh002_errors(source)
+        with pytest.raises(AttributeError):
+            errors[0].line = 99  # type: ignore[misc]
