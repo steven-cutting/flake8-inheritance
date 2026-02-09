@@ -32,8 +32,9 @@ relative imports, record the module name as the sentinel value
   (`same_file`), and unresolved cases (`unknown`) in a consistent way.
 - Relative imports are explicitly tracked with `__relative__`, allowing later
   resolution logic to treat them separately.
-- The approach requires Python 3.10+ for `sys.stdlib_module_names`, which
-  matches the project's minimum supported version.
+- The approach relies on `sys.stdlib_module_names`, available in Python 3.10+,
+  and is fully compatible with the project's minimum supported Python version
+  (3.11+).
 
 ## Alternatives considered
 
