@@ -41,14 +41,12 @@ def test_relative_import_without_module_records_relative_sentinel() -> None:
 
 
 def test_classification_categories() -> None:
-    source = "\n".join(
-        [
-            "import sys",
-            "import requests",
-            "import internal_pkg.utils",
-            "from . import local_mod",
-        ]
-    )
+    source = """\
+import sys
+import requests
+import internal_pkg.utils
+from . import local_mod
+"""
     tree = ast.parse(source)
     tracker = ImportTracker(project_package="internal_pkg")
     tracker.visit(tree)
