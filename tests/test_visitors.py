@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import ast
 
+import pytest
+
 from flake8_inheritance.visitors import RELATIVE_SENTINEL, ImportTracker
 
 
@@ -15,34 +17,20 @@ def track_imports(source: str) -> ImportTracker:
     return tracker
 
 
-def test_import_statement_maps_module_name() -> None:
-    tracker = track_imports("import foo")
-    assert tracker.imports == {"foo": "foo"}
-
-
-def test_import_statement_with_alias_tracks_local_name() -> None:
-    tracker = track_imports("import foo.bar as baz")
-    assert tracker.imports == {"baz": "foo"}
-
-
-def test_from_import_maps_to_top_level_package() -> None:
-    tracker = track_imports("from foo.bar import Baz")
-    assert tracker.imports == {"Baz": "foo"}
-
-
-def test_from_import_with_alias_tracks_alias_name() -> None:
-    tracker = track_imports("from foo.bar import Baz as B")
-    assert tracker.imports == {"B": "foo"}
-
-
-def test_relative_import_records_relative_sentinel() -> None:
-    tracker = track_imports("from .models import Base")
-    assert tracker.imports == {"Base": RELATIVE_SENTINEL}
-
-
-def test_relative_import_without_module_records_relative_sentinel() -> None:
-    tracker = track_imports("from . import utils")
-    assert tracker.imports == {"utils": RELATIVE_SENTINEL}
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("import foo", {"foo": "foo"}),
+        ("import foo.bar as baz", {"baz": "foo"}),
+        ("from foo.bar import Baz", {"Baz": "foo"}),
+        ("from foo.bar import Baz as B", {"B": "foo"}),
+        ("from .models import Base", {"Base": RELATIVE_SENTINEL}),
+        ("from . import utils", {"utils": RELATIVE_SENTINEL}),
+    ],
+)
+def test_import_mapping(source: str, expected: dict[str, str]) -> None:
+    tracker = track_imports(source)
+    assert tracker.imports == expected
 
 
 def test_classification_categories() -> None:
