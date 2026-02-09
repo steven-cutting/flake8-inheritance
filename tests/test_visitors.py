@@ -6,10 +6,13 @@ import ast
 
 import pytest
 
+from flake8_inheritance.codes import INH001
 from flake8_inheritance.visitors import (
     RELATIVE_SENTINEL,
     ImportTracker,
+    InheritanceError,
     InheritanceVisitor,
+    _collect_module_class_names,
 )
 
 
@@ -78,14 +81,23 @@ def test_empty_import_from_module_classifies_unknown() -> None:
 def collect_errors(
     source: str,
     project_package: str | None = None,
-) -> list[tuple[int, int, str]]:
+) -> list[InheritanceError]:
     """Parse source, run ImportTracker + InheritanceVisitor, return errors."""
     tree = ast.parse(source)
     tracker = ImportTracker(project_package=project_package)
     tracker.visit(tree)
-    visitor = InheritanceVisitor(import_tracker=tracker)
+    module_classes = _collect_module_class_names(tree)
+    visitor = InheritanceVisitor(
+        import_tracker=tracker,
+        module_class_names=frozenset(module_classes),
+    )
     visitor.visit(tree)
     return visitor.errors
+
+
+def flagged_bases(errors: list[InheritanceError]) -> list[str]:
+    """Return just the base names from a list of errors."""
+    return [e.base_name for e in errors]
 
 
 # ---------------------------------------------------------------------------
@@ -106,12 +118,9 @@ class Child(Base):
 """
         child_line = 4
         errors = collect_errors(source)
-        assert len(errors) == 1
-        line, col, msg = errors[0]
-        assert line == child_line
-        assert col == 0
-        assert "INH001" in msg
-        assert "Base" in msg
+        assert flagged_bases(errors) == ["Base"]
+        assert errors[0].code is INH001
+        assert errors[0].line == child_line
 
     def test_multiple_same_file_bases_flagged(self) -> None:
         source = """\
@@ -124,9 +133,33 @@ class B:
 class C(A, B):
     pass
 """
-        expected_error_count = 2
         errors = collect_errors(source)
-        assert len(errors) == expected_error_count
+        assert flagged_bases(errors) == ["A", "B"]
+
+    def test_forward_declaration_flagged(self) -> None:
+        """Base defined after child should still be flagged."""
+        source = """\
+class Child(Base):
+    pass
+
+class Base:
+    pass
+"""
+        errors = collect_errors(source)
+        assert flagged_bases(errors) == ["Base"]
+
+    def test_nested_class_not_treated_as_module_level(self) -> None:
+        """A class nested inside another should not trigger same-file detection."""
+        source = """\
+class Outer:
+    class Inner:
+        pass
+
+class Other(Inner):
+    pass
+"""
+        errors = collect_errors(source)
+        assert errors == []
 
 
 class TestINH001RelativeImportInheritance:
@@ -140,9 +173,8 @@ class Child(Base):
     pass
 """
         errors = collect_errors(source)
-        assert len(errors) == 1
-        assert "INH001" in errors[0][2]
-        assert "Base" in errors[0][2]
+        assert flagged_bases(errors) == ["Base"]
+        assert errors[0].code is INH001
 
     def test_relative_import_dot_only_flagged(self) -> None:
         source = """\
@@ -152,7 +184,7 @@ class Child(Base):
     pass
 """
         errors = collect_errors(source)
-        assert len(errors) == 1
+        assert flagged_bases(errors) == ["Base"]
 
 
 class TestINH001ProjectPackageInheritance:
@@ -166,9 +198,8 @@ class Child(Base):
     pass
 """
         errors = collect_errors(source, project_package="myproject")
-        assert len(errors) == 1
-        assert "INH001" in errors[0][2]
-        assert "Base" in errors[0][2]
+        assert flagged_bases(errors) == ["Base"]
+        assert errors[0].code is INH001
 
 
 class TestINH001AllowedBases:
@@ -181,8 +212,7 @@ from collections import OrderedDict
 class MyDict(OrderedDict):
     pass
 """
-        errors = collect_errors(source)
-        assert errors == []
+        assert collect_errors(source) == []
 
     def test_third_party_base_allowed(self) -> None:
         source = """\
@@ -191,8 +221,7 @@ from pydantic import BaseModel
 class User(BaseModel):
     pass
 """
-        errors = collect_errors(source)
-        assert errors == []
+        assert collect_errors(source) == []
 
     def test_unrecognized_absolute_import_not_flagged(self) -> None:
         source = """\
@@ -201,8 +230,7 @@ from somepackage import Base
 class Child(Base):
     pass
 """
-        errors = collect_errors(source)  # no project_package configured
-        assert errors == []
+        assert collect_errors(source) == []  # no project_package configured
 
 
 class TestINH001DynamicBases:
@@ -213,8 +241,7 @@ class TestINH001DynamicBases:
 class Child(get_base()):
     pass
 """
-        errors = collect_errors(source)
-        assert errors == []
+        assert collect_errors(source) == []
 
     def test_dynamic_base_with_regular_base(self) -> None:
         source = """\
@@ -224,8 +251,7 @@ class Child(Base, get_mixin()):
     pass
 """
         errors = collect_errors(source)
-        assert len(errors) == 1
-        assert "Base" in errors[0][2]
+        assert flagged_bases(errors) == ["Base"]
 
 
 class TestINH001AttributeBases:
@@ -239,9 +265,8 @@ class Child(myproject.models.Base):
     pass
 """
         errors = collect_errors(source, project_package="myproject")
-        assert len(errors) == 1
-        assert "INH001" in errors[0][2]
-        assert "myproject.models.Base" in errors[0][2]
+        assert flagged_bases(errors) == ["myproject.models.Base"]
+        assert errors[0].code is INH001
 
     def test_attribute_base_from_stdlib(self) -> None:
         source = """\
@@ -250,8 +275,7 @@ import collections
 class MyDict(collections.OrderedDict):
     pass
 """
-        errors = collect_errors(source)
-        assert errors == []
+        assert collect_errors(source) == []
 
     def test_attribute_base_from_third_party(self) -> None:
         source = """\
@@ -260,8 +284,58 @@ import flask
 class MyApp(flask.Flask):
     pass
 """
+        assert collect_errors(source) == []
+
+
+class TestINH001SubscriptBases:
+    """Generic base classes like Base[T] should be unwrapped and checked."""
+
+    def test_subscript_same_file_flagged(self) -> None:
+        source = """\
+from typing import Generic, TypeVar
+
+T = TypeVar("T")
+
+class Base(Generic[T]):
+    pass
+
+class Child(Base[int]):
+    pass
+"""
         errors = collect_errors(source)
-        assert errors == []
+        assert flagged_bases(errors) == ["Base"]
+
+    def test_subscript_relative_import_flagged(self) -> None:
+        source = """\
+from .models import Base
+
+class Child(Base[int]):
+    pass
+"""
+        errors = collect_errors(source)
+        assert flagged_bases(errors) == ["Base"]
+
+    def test_subscript_attribute_flagged(self) -> None:
+        source = """\
+import myproject.models
+
+class Child(myproject.models.Base[int]):
+    pass
+"""
+        errors = collect_errors(source, project_package="myproject")
+        assert flagged_bases(errors) == ["myproject.models.Base"]
+
+    def test_subscript_stdlib_allowed(self) -> None:
+        source = """\
+from typing import Generic, TypeVar
+
+T = TypeVar("T")
+
+class MyClass(Generic[T]):
+    pass
+"""
+        # Generic is stdlib, should not be flagged
+        assert collect_errors(source) == []
 
 
 class TestINH001NoFalsePositives:
@@ -272,8 +346,7 @@ class TestINH001NoFalsePositives:
 class Standalone:
     pass
 """
-        errors = collect_errors(source)
-        assert errors == []
+        assert collect_errors(source) == []
 
     def test_class_inheriting_from_unknown_name(self) -> None:
         """A name that was never imported and not defined in file."""
@@ -281,5 +354,4 @@ class Standalone:
 class Child(SomeUnknownBase):
     pass
 """
-        errors = collect_errors(source)
-        assert errors == []
+        assert collect_errors(source) == []
