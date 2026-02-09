@@ -104,10 +104,11 @@ class Base:
 class Child(Base):
     pass
 """
+        child_line = 4
         errors = collect_errors(source)
         assert len(errors) == 1
         line, col, msg = errors[0]
-        assert line == 4
+        assert line == child_line
         assert col == 0
         assert "INH001" in msg
         assert "Base" in msg
@@ -123,8 +124,9 @@ class B:
 class C(A, B):
     pass
 """
+        expected_error_count = 2
         errors = collect_errors(source)
-        assert len(errors) == 2
+        assert len(errors) == expected_error_count
 
 
 class TestINH001RelativeImportInheritance:
