@@ -14,7 +14,7 @@ from flake8_inheritance.visitors import (
     ImportTracker,
     InheritanceError,
     InheritanceVisitor,
-    _collect_module_class_names,
+    collect_module_class_names,
 )
 
 
@@ -88,7 +88,7 @@ def collect_errors(
     tree = ast.parse(source)
     tracker = ImportTracker(project_package=project_package)
     tracker.visit(tree)
-    module_classes = _collect_module_class_names(tree)
+    module_classes = collect_module_class_names(tree)
     visitor = InheritanceVisitor(
         import_tracker=tracker,
         module_class_names=frozenset(module_classes),
@@ -931,13 +931,13 @@ z = [1, 2, 3]
 """
         assert collect_errors(source) == []
 
-    def test_collect_module_class_names_empty(self) -> None:
+    def testcollect_module_class_names_empty(self) -> None:
         tree = ast.parse("")
-        assert _collect_module_class_names(tree) == set()
+        assert collect_module_class_names(tree) == set()
 
-    def test_collect_module_class_names_no_classes(self) -> None:
+    def testcollect_module_class_names_no_classes(self) -> None:
         tree = ast.parse("x = 1\ndef foo(): pass\n")
-        assert _collect_module_class_names(tree) == set()
+        assert collect_module_class_names(tree) == set()
 
 
 class TestDeeplyNestedClasses:
@@ -982,7 +982,7 @@ if True:
 """
         # Note: ast.Module.body includes the if statement, but the ClassDef
         # inside it is not directly in module.body — it's in the if.body.
-        # _collect_module_class_names only scans module.body directly.
+        # collect_module_class_names only scans module.body directly.
         # However InheritanceVisitor.visit_ClassDef will still find Child
         # and check Base — which IS in module_classes.
         errors = collect_errors(source)

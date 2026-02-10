@@ -9,7 +9,7 @@ from flake8_inheritance.visitors import (
     ABCPurityVisitor,
     ImportTracker,
     InheritanceVisitor,
-    _collect_module_class_names,
+    collect_module_class_names,
 )
 
 if TYPE_CHECKING:
@@ -38,7 +38,7 @@ class InheritanceChecker:
         tracker = ImportTracker()
         tracker.visit(self._tree)
 
-        module_classes = frozenset(_collect_module_class_names(self._tree))
+        module_classes = frozenset(collect_module_class_names(self._tree))
 
         inh_visitor = InheritanceVisitor(tracker, module_classes)
         inh_visitor.visit(self._tree)
