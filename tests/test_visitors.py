@@ -931,11 +931,11 @@ z = [1, 2, 3]
 """
         assert collect_errors(source) == []
 
-    def testcollect_module_class_names_empty(self) -> None:
+    def test_collect_module_class_names_empty(self) -> None:
         tree = ast.parse("")
         assert collect_module_class_names(tree) == set()
 
-    def testcollect_module_class_names_no_classes(self) -> None:
+    def test_collect_module_class_names_no_classes(self) -> None:
         tree = ast.parse("x = 1\ndef foo(): pass\n")
         assert collect_module_class_names(tree) == set()
 
