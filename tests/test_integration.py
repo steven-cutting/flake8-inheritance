@@ -2,22 +2,17 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
 import textwrap
+from typing import TYPE_CHECKING
 
-from pytest_flake8_path import Flake8Path
+if TYPE_CHECKING:
+    from pytest_flake8_path import Flake8Path
 
 
 def test_plugin_loaded(flake8_path: Flake8Path) -> None:
     """Plugin appears in ``flake8 --version`` output."""
-    result = subprocess.run(
-        [sys.executable, "-m", "flake8", "--version"],
-        capture_output=True,
-        text=True,
-        cwd=str(flake8_path),
-    )
-    assert "flake8-inheritance" in result.stdout
+    result = flake8_path.run_flake8(extra_args=["--version"])
+    assert "flake8-inheritance" in result.out
 
 
 def test_inh001_with_config(flake8_path: Flake8Path) -> None:
