@@ -42,7 +42,7 @@ class InheritanceChecker:
     version: ClassVar[str] = importlib.metadata.version("flake8-inheritance")
 
     _project_packages: ClassVar[tuple[str, ...]] = ()
-    _inh002_allowed_dunders: ClassVar[tuple[str, ...]] = ("__init__",)
+    _inh002_allowed_dunders: ClassVar[tuple[str, ...] | None] = None
 
     def __init__(self, tree: ast.AST) -> None:
         """Initialize the checker with the AST for a single file."""
@@ -60,7 +60,7 @@ class InheritanceChecker:
         )
         parser.add_option(
             "--inh002-allowed-dunders",
-            default="__init__",
+            default=None,
             parse_from_config=True,
             comma_separated_list=True,
             help="Comma-separated list of dunder methods allowed in ABCs.",
@@ -76,7 +76,9 @@ class InheritanceChecker:
             cls._project_packages = _parse_comma_separated(raw_packages)
 
         raw_dunders = options.inh002_allowed_dunders
-        if isinstance(raw_dunders, list):
+        if raw_dunders is None:
+            cls._inh002_allowed_dunders = None
+        elif isinstance(raw_dunders, list):
             cls._inh002_allowed_dunders = tuple(
                 item.strip() for item in raw_dunders if item.strip()
             )
@@ -115,8 +117,12 @@ class InheritanceChecker:
                 if (error.line, error.col, error.base) not in existing:
                     inh_visitor.errors.append(error)
 
-        # Build allowed dunders frozenset for ABCPurityVisitor
-        allowed_dunders = frozenset(self._inh002_allowed_dunders)
+        # Build allowed dunder configuration for ABCPurityVisitor
+        allowed_dunders = (
+            None
+            if self._inh002_allowed_dunders is None
+            else frozenset(self._inh002_allowed_dunders)
+        )
         abc_visitor = ABCPurityVisitor(primary_tracker, allowed_dunders=allowed_dunders)
         abc_visitor.visit(self._tree)
 
