@@ -23,7 +23,7 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 def _read_fixture(name: str) -> str:
     """Read and return the contents of a fixture file."""
-    return (FIXTURES_DIR / name).read_text()
+    return (FIXTURES_DIR / name).read_text(encoding="utf-8")
 
 
 def track_imports(source: str) -> ImportTracker:
