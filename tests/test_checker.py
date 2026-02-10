@@ -55,6 +55,22 @@ class TestCheckerINH001:
         assert "INH001" in message
         assert "BaseModel" in message
 
+    def test_absolute_project_import_not_flagged_without_config(self) -> None:
+        """Absolute project imports are not flagged without project_package config.
+
+        The checker does not yet support ``--project-packages``; that option
+        will be wired in Task 3.2 (add_options / parse_options).  Until then,
+        absolute imports from the user's own project are classified as
+        ``external`` and silently allowed.
+        """
+        source = """\
+            from myproject.models import Base
+
+            class Child(Base):
+                pass
+        """
+        assert _run_checker(source) == []
+
     def test_no_inheritance_no_errors(self) -> None:
         """A file with no inheritance produces no errors."""
         source = """\
