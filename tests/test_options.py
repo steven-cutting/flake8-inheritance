@@ -6,7 +6,6 @@ import argparse
 import ast
 import textwrap
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -16,33 +15,47 @@ import pytest
 from flake8_inheritance.checker import InheritanceChecker
 
 
+class _OptionCall:
+    def __init__(self, *args: str, **kwargs: object) -> None:
+        self.args = args
+        self.kwargs = kwargs
+
+
+class _ParserSpy:
+    def __init__(self) -> None:
+        self.calls: list[_OptionCall] = []
+
+    def add_option(self, *args: str, **kwargs: object) -> None:
+        self.calls.append(_OptionCall(*args, **kwargs))
+
+
 class TestAddOptions:
     """add_options registers CLI options with flake8's option_manager."""
 
     def test_registers_project_packages(self) -> None:
         """--project-packages is registered as a comma-separated option."""
-        parser = MagicMock()
+        parser = _ParserSpy()
         InheritanceChecker.add_options(parser)
 
-        calls = parser.add_option.call_args_list
+        calls = parser.calls
         long_names = [call.args[0] for call in calls]
         assert "--project-packages" in long_names
 
     def test_registers_inh002_allowed_dunders(self) -> None:
         """--inh002-allowed-dunders is registered as a comma-separated option."""
-        parser = MagicMock()
+        parser = _ParserSpy()
         InheritanceChecker.add_options(parser)
 
-        calls = parser.add_option.call_args_list
+        calls = parser.calls
         long_names = [call.args[0] for call in calls]
         assert "--inh002-allowed-dunders" in long_names
 
     def test_project_packages_parse_from_config(self) -> None:
         """--project-packages has parse_from_config=True."""
-        parser = MagicMock()
+        parser = _ParserSpy()
         InheritanceChecker.add_options(parser)
 
-        calls = parser.add_option.call_args_list
+        calls = parser.calls
         for call in calls:
             if call.args[0] == "--project-packages":
                 assert call.kwargs["parse_from_config"] is True
@@ -50,10 +63,10 @@ class TestAddOptions:
 
     def test_inh002_allowed_dunders_parse_from_config(self) -> None:
         """--inh002-allowed-dunders has parse_from_config=True."""
-        parser = MagicMock()
+        parser = _ParserSpy()
         InheritanceChecker.add_options(parser)
 
-        calls = parser.add_option.call_args_list
+        calls = parser.calls
         for call in calls:
             if call.args[0] == "--inh002-allowed-dunders":
                 assert call.kwargs["parse_from_config"] is True
@@ -61,10 +74,10 @@ class TestAddOptions:
 
     def test_project_packages_default_empty(self) -> None:
         """--project-packages defaults to empty string."""
-        parser = MagicMock()
+        parser = _ParserSpy()
         InheritanceChecker.add_options(parser)
 
-        calls = parser.add_option.call_args_list
+        calls = parser.calls
         for call in calls:
             if call.args[0] == "--project-packages":
                 assert call.kwargs["default"] == ""
@@ -72,10 +85,10 @@ class TestAddOptions:
 
     def test_inh002_allowed_dunders_default_init(self) -> None:
         """--inh002-allowed-dunders defaults to '__init__'."""
-        parser = MagicMock()
+        parser = _ParserSpy()
         InheritanceChecker.add_options(parser)
 
-        calls = parser.add_option.call_args_list
+        calls = parser.calls
         for call in calls:
             if call.args[0] == "--inh002-allowed-dunders":
                 assert call.kwargs["default"] == "__init__"
@@ -130,9 +143,7 @@ class TestParseOptions:
 
     def test_single_allowed_dunder(self) -> None:
         """A single dunder is parsed into a one-element tuple."""
-        options = argparse.Namespace(
-            project_packages="", inh002_allowed_dunders="__init__"
-        )
+        options = argparse.Namespace(project_packages="", inh002_allowed_dunders="__init__")
         InheritanceChecker.parse_options(options)
 
         assert InheritanceChecker._inh002_allowed_dunders == ("__init__",)

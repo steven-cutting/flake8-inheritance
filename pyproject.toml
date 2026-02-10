@@ -90,6 +90,9 @@ ignore = [
     "ISC001",  # single-line-implicit-string-concatenation (conflicts with formatter)
 ]
 
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"unittest" = { msg = "Use pytest for tests in this project." }
+
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
     "D",       # docstring rules relaxed in tests

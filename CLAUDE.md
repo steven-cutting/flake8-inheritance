@@ -22,6 +22,9 @@ codebases.
 3. Use test-first TDD: write the failing test BEFORE the implementation
 4. All code must pass `ruff check`, `ruff format --check`, and
    `mypy --strict`
+5. Do not use `MagicMock`, monkeypatching, or equivalent monkey-patching tools
+   from pytest or other libraries; prefer interface-respecting tests without
+   brittle test doubles
 
 ## Architecture
 
