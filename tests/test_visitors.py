@@ -832,3 +832,335 @@ class MyABC(ABC):
         errors = collect_inh002_errors(source)
         with pytest.raises(AttributeError):
             errors[0].line = 99  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# Edge case hardening
+# ---------------------------------------------------------------------------
+
+
+class TestStarImports:
+    """Star imports should be skipped without crashing."""
+
+    def test_star_import_no_crash(self) -> None:
+        """``from myproject.models import *`` must not crash."""
+        source = """\
+from myproject.models import *
+
+class Child(Base):
+    pass
+"""
+        # Should not raise — star imports are silently recorded
+        errors = collect_errors(source, project_package="myproject")
+        # "Base" is not explicitly imported, so it's unknown — no error
+        assert errors == []
+
+    def test_star_import_relative_no_crash(self) -> None:
+        """``from . import *`` must not crash."""
+        source = """\
+from . import *
+
+class Child(SomeBase):
+    pass
+"""
+        errors = collect_errors(source)
+        assert errors == []
+
+    def test_star_import_with_regular_imports(self) -> None:
+        """Star import alongside regular imports should not interfere."""
+        source = """\
+from myproject.models import *
+from .base import Base
+
+class Child(Base):
+    pass
+"""
+        errors = collect_errors(source, project_package="myproject")
+        assert flagged_bases(errors) == ["Base"]
+
+    def test_star_import_inh002_no_crash(self) -> None:
+        """Star imports should not crash ABCPurityVisitor either."""
+        source = """\
+from abc import *
+
+class MyABC(ABC):
+    def concrete_method(self):
+        return 42
+"""
+        # Star import means "ABC" and "abstractmethod" are not tracked by name
+        # so the visitor may not detect this as an ABC — that's acceptable.
+        # The key thing is: no crash.
+        collect_inh002_errors(source)
+
+
+class TestEmptyAndNoClassFiles:
+    """Empty files and files with no class definitions."""
+
+    def test_empty_file_inh001(self) -> None:
+        errors = collect_errors("")
+        assert errors == []
+
+    def test_empty_file_inh002(self) -> None:
+        errors = collect_inh002_errors("")
+        assert errors == []
+
+    def test_file_with_only_imports(self) -> None:
+        source = """\
+import os
+from collections import OrderedDict
+"""
+        assert collect_errors(source) == []
+        assert collect_inh002_errors(source) == []
+
+    def test_file_with_only_functions(self) -> None:
+        source = """\
+def foo():
+    return 42
+
+def bar(x):
+    return x + 1
+"""
+        assert collect_errors(source) == []
+        assert collect_inh002_errors(source) == []
+
+    def test_file_with_only_variables(self) -> None:
+        source = """\
+x = 1
+y = "hello"
+z = [1, 2, 3]
+"""
+        assert collect_errors(source) == []
+
+    def test_collect_module_class_names_empty(self) -> None:
+        tree = ast.parse("")
+        assert _collect_module_class_names(tree) == set()
+
+    def test_collect_module_class_names_no_classes(self) -> None:
+        tree = ast.parse("x = 1\ndef foo(): pass\n")
+        assert _collect_module_class_names(tree) == set()
+
+
+class TestDeeplyNestedClasses:
+    """Classes inside functions or nested deeply in other classes."""
+
+    def test_class_inside_function_not_module_level(self) -> None:
+        """A class defined inside a function should not be treated as module-level."""
+        source = """\
+def factory():
+    class Inner:
+        pass
+    return Inner
+
+class Other(Inner):
+    pass
+"""
+        # Inner is not a module-level class, so Other(Inner) where Inner is
+        # unknown should produce no error
+        errors = collect_errors(source)
+        assert errors == []
+
+    def test_class_nested_two_levels(self) -> None:
+        """Class nested inside a class inside a class."""
+        source = """\
+class Outer:
+    class Middle:
+        class Inner:
+            pass
+"""
+        errors = collect_errors(source)
+        assert errors == []
+
+    def test_class_inside_if_block(self) -> None:
+        """Class defined inside an if block IS a module-level statement."""
+        source = """\
+class Base:
+    pass
+
+if True:
+    class Child(Base):
+        pass
+"""
+        # Note: ast.Module.body includes the if statement, but the ClassDef
+        # inside it is not directly in module.body — it's in the if.body.
+        # _collect_module_class_names only scans module.body directly.
+        # However InheritanceVisitor.visit_ClassDef will still find Child
+        # and check Base — which IS in module_classes.
+        errors = collect_errors(source)
+        assert flagged_bases(errors) == ["Base"]
+
+    def test_deeply_nested_class_inheriting_from_module_level(self) -> None:
+        """A nested class inheriting from a module-level class."""
+        source = """\
+class Base:
+    pass
+
+class Outer:
+    class Inner(Base):
+        pass
+"""
+        # Inner inherits from Base which is module-level — should be flagged
+        errors = collect_errors(source)
+        assert flagged_bases(errors) == ["Base"]
+
+    def test_class_in_function_inheriting_from_import(self) -> None:
+        """Class inside function inheriting from imported class."""
+        source = """\
+from .models import Base
+
+def factory():
+    class Product(Base):
+        pass
+    return Product
+"""
+        errors = collect_errors(source)
+        assert flagged_bases(errors) == ["Base"]
+
+
+class TestManyBaseClasses:
+    """Classes with many base classes should not exhibit quadratic behavior."""
+
+    def test_ten_plus_bases_no_error(self) -> None:
+        """A class with 10+ external bases should produce no errors."""
+        bases = ", ".join(f"Base{i}" for i in range(15))
+        imports = "\n".join(f"from external_pkg import Base{i}" for i in range(15))
+        source = f"""\
+{imports}
+
+class Child({bases}):
+    pass
+"""
+        errors = collect_errors(source)
+        assert errors == []
+
+    def test_ten_plus_internal_bases_all_flagged(self) -> None:
+        """A class with 10+ internal bases should flag all of them."""
+        num_bases = 12
+        base_defs = "\n".join(f"class Base{i}:\n    pass\n" for i in range(num_bases))
+        bases = ", ".join(f"Base{i}" for i in range(num_bases))
+        source = f"""\
+{base_defs}
+class Child({bases}):
+    pass
+"""
+        errors = collect_errors(source)
+        assert len(errors) == num_bases
+        for i, err in enumerate(errors):
+            assert err.base == f"Base{i}"
+
+    @pytest.mark.timeout(1)
+    def test_many_bases_performance(self) -> None:
+        """Processing 10+ bases should complete in well under 1 second."""
+        num_bases = 50
+        bases = ", ".join(f"Base{i}" for i in range(num_bases))
+        imports = "\n".join(f"from .models import Base{i}" for i in range(num_bases))
+        source = f"""\
+{imports}
+
+class Child({bases}):
+    pass
+"""
+        errors = collect_errors(source)
+        assert len(errors) == num_bases
+
+
+class TestAttributeBasesEdgeCases:
+    """Additional edge cases for ast.Attribute base classes."""
+
+    def test_deeply_nested_attribute_base(self) -> None:
+        """``class Foo(a.b.c.d.Base):`` should resolve correctly."""
+        source = """\
+import myproject
+
+class Child(myproject.sub.models.Base):
+    pass
+"""
+        errors = collect_errors(source, project_package="myproject")
+        assert flagged_bases(errors) == ["myproject.sub.models.Base"]
+
+    def test_attribute_base_unknown_root(self) -> None:
+        """Attribute base with unknown root module should not be flagged."""
+        source = """\
+class Child(unknown_module.Base):
+    pass
+"""
+        errors = collect_errors(source)
+        assert errors == []
+
+    def test_attribute_base_relative_import(self) -> None:
+        """Attribute access on a relatively imported module."""
+        source = """\
+from . import models
+
+class Child(models.Base):
+    pass
+"""
+        errors = collect_errors(source)
+        assert flagged_bases(errors) == ["models.Base"]
+
+
+class TestMixedInternalExternalBases:
+    """Multiple inheritance with mixed internal and external bases."""
+
+    def test_mixed_internal_and_external(self) -> None:
+        """Only internal bases should be flagged, external ones skipped."""
+        source = """\
+from collections import OrderedDict
+from .models import Base
+
+class Child(Base, OrderedDict):
+    pass
+"""
+        errors = collect_errors(source)
+        assert flagged_bases(errors) == ["Base"]
+
+    def test_mixed_same_file_and_stdlib(self) -> None:
+        source = """\
+import typing
+
+class Base:
+    pass
+
+class Child(Base, typing.Protocol):
+    pass
+"""
+        errors = collect_errors(source)
+        assert flagged_bases(errors) == ["Base"]
+
+    def test_mixed_internal_external_and_dynamic(self) -> None:
+        """Internal, external, and dynamic bases together."""
+        source = """\
+from pydantic import BaseModel
+from .models import InternalBase
+
+class Child(InternalBase, BaseModel, get_mixin()):
+    pass
+"""
+        errors = collect_errors(source)
+        assert flagged_bases(errors) == ["InternalBase"]
+
+    def test_mixed_project_package_and_third_party(self) -> None:
+        source = """\
+import flask
+import myproject.models
+
+class MyView(myproject.models.BaseView, flask.views.View):
+    pass
+"""
+        errors = collect_errors(source, project_package="myproject")
+        assert flagged_bases(errors) == ["myproject.models.BaseView"]
+
+    def test_all_three_internal_types_mixed(self) -> None:
+        """Same-file, relative import, and project package bases all flagged."""
+        source = """\
+from .mixins import Mixin
+from myproject.models import Model
+
+class LocalBase:
+    pass
+
+class Child(LocalBase, Mixin, Model):
+    pass
+"""
+        errors = collect_errors(source, project_package="myproject")
+        expected = ["LocalBase", "Mixin", "Model"]
+        assert flagged_bases(errors) == expected
