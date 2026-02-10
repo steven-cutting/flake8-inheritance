@@ -122,7 +122,7 @@ def _resolve_base(node: ast.expr) -> str | None:
     return None
 
 
-def _collect_module_class_names(tree: ast.AST) -> set[str]:
+def collect_module_class_names(tree: ast.AST) -> set[str]:
     """Pre-scan the module body and return all top-level class names."""
     names: set[str] = set()
     if isinstance(tree, ast.Module):
