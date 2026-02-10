@@ -194,10 +194,15 @@ class ABCPurityVisitor(ast.NodeVisitor):
     metaclass.  Dunder methods (e.g. ``__init__``) are always allowed.
     """
 
-    def __init__(self, import_tracker: ImportTracker) -> None:
+    def __init__(
+        self,
+        import_tracker: ImportTracker,
+        allowed_dunders: frozenset[str] | None = None,
+    ) -> None:
         """Initialize with a pre-populated import tracker."""
         self._tracker = import_tracker
         self.errors: list[ABCPurityError] = []
+        self._allowed_dunders = allowed_dunders
         self._abc_local_names = self._resolve_names_for("ABC")
         self._abcmeta_local_names = self._resolve_names_for("ABCMeta")
         self._abstractmethod_local_names = self._resolve_names_for("abstractmethod")
@@ -294,8 +299,11 @@ class ABCPurityVisitor(ast.NodeVisitor):
                 if not isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef):
                     continue
 
-                # Allow dunder methods
-                if item.name.startswith("__") and item.name.endswith("__"):
+                # Allow dunder methods (all if no allowlist, specific if configured)
+                is_dunder = item.name.startswith("__") and item.name.endswith("__")
+                if is_dunder and (
+                    self._allowed_dunders is None or item.name in self._allowed_dunders
+                ):
                     continue
 
                 # Check if decorated with @abstractmethod
