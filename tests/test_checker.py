@@ -257,3 +257,96 @@ class TestCheckerCombined:
         assert isinstance(col, int)
         assert isinstance(message, str)
         assert isinstance(cls, type)
+
+
+class TestCheckerNoStateLeak:
+    """State from one file must not leak into the next checker invocation."""
+
+    def test_errors_from_first_file_do_not_appear_in_second(self) -> None:
+        """Running the checker on a file with violations, then on a clean file.
+
+        The clean file must produce zero errors — no state from the first
+        run should carry over.
+        """
+        source_with_errors = """\
+            from abc import ABC, abstractmethod
+
+            class Base:
+                pass
+
+            class Child(Base):
+                pass
+
+            class MyABC(ABC):
+                @abstractmethod
+                def do_it(self):
+                    pass
+
+                def concrete(self):
+                    return 1
+        """
+        clean_source = """\
+            class Standalone:
+                pass
+        """
+
+        first_results = _run_checker(source_with_errors)
+        assert len(first_results) > 0, "precondition: first file should have errors"
+
+        second_results = _run_checker(clean_source)
+        assert second_results == [], "state leaked from first checker run to second"
+
+    def test_second_file_errors_independent_of_first(self) -> None:
+        """Running the checker on a clean file, then on a file with violations.
+
+        The second file must report exactly its own errors — not fewer, not
+        more.
+        """
+        clean_source = """\
+            import os
+        """
+        source_with_errors = """\
+            class Parent:
+                pass
+
+            class Child(Parent):
+                pass
+        """
+
+        first_results = _run_checker(clean_source)
+        assert first_results == [], "precondition: clean file should have no errors"
+
+        second_results = _run_checker(source_with_errors)
+        assert len(second_results) == 1
+        assert "INH001" in second_results[0][2]
+        assert "Parent" in second_results[0][2]
+
+    def test_inh002_state_does_not_leak(self) -> None:
+        """ABCPurityVisitor state from one file does not leak into the next.
+
+        The first file has an ABC with a concrete method; the second file
+        has a non-ABC class with a regular method.  The second must be clean.
+        """
+        abc_source = """\
+            from abc import ABC, abstractmethod
+
+            class MyABC(ABC):
+                @abstractmethod
+                def required(self):
+                    pass
+
+                def helper(self):
+                    return 42
+        """
+        non_abc_source = """\
+            class Regular:
+                def helper(self):
+                    return 42
+        """
+
+        first_results = _run_checker(abc_source)
+        assert len(first_results) == 1, "precondition: ABC file should have INH002"
+        assert "INH002" in first_results[0][2]
+
+        second_results = _run_checker(non_abc_source)
+        assert second_results == [], "INH002 state leaked from first run to second"
