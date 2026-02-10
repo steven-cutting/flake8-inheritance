@@ -5,6 +5,13 @@ from __future__ import annotations
 import importlib.metadata
 from typing import TYPE_CHECKING, ClassVar
 
+from flake8_inheritance.visitors import (
+    ABCPurityVisitor,
+    ImportTracker,
+    InheritanceVisitor,
+    _collect_module_class_names,
+)
+
 if TYPE_CHECKING:
     import ast
     from collections.abc import Generator
@@ -27,5 +34,19 @@ class InheritanceChecker:
         self._tree = tree
 
     def run(self) -> Generator[tuple[int, int, str, type], None, None]:
-        """Run the checker. Yields nothing until rules are implemented."""
-        yield from ()
+        """Run the checker and yield flake8 error tuples."""
+        tracker = ImportTracker()
+        tracker.visit(self._tree)
+
+        module_classes = frozenset(_collect_module_class_names(self._tree))
+
+        inh_visitor = InheritanceVisitor(tracker, module_classes)
+        inh_visitor.visit(self._tree)
+
+        abc_visitor = ABCPurityVisitor(tracker)
+        abc_visitor.visit(self._tree)
+
+        for inh_error in inh_visitor.errors:
+            yield inh_error.as_flake8_tuple()
+        for abc_error in abc_visitor.errors:
+            yield abc_error.as_flake8_tuple()
