@@ -1047,10 +1047,9 @@ class Child({bases}):
         for i, err in enumerate(errors):
             assert err.base == f"Base{i}"
 
+    @pytest.mark.timeout(1)
     def test_many_bases_performance(self) -> None:
         """Processing 10+ bases should complete in well under 1 second."""
-        import time
-
         num_bases = 50
         bases = ", ".join(f"Base{i}" for i in range(num_bases))
         imports = "\n".join(f"from .models import Base{i}" for i in range(num_bases))
@@ -1060,10 +1059,7 @@ class Child({bases}):
 class Child({bases}):
     pass
 """
-        start = time.monotonic()
         errors = collect_errors(source)
-        elapsed = time.monotonic() - start
-        assert elapsed < 1.0, f"Processing {num_bases} bases took {elapsed:.3f}s"
         assert len(errors) == num_bases
 
 
