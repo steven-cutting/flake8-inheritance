@@ -191,7 +191,8 @@ class ABCPurityVisitor(ast.NodeVisitor):
 
     Walks ``ast.ClassDef`` nodes and flags concrete (non-abstract) methods
     in classes that inherit from ``abc.ABC`` or use ``abc.ABCMeta`` as their
-    metaclass.  Dunder methods (e.g. ``__init__``) are always allowed.
+    metaclass. Dunder handling is configurable: when no allowlist is provided,
+    all dunder methods are allowed; otherwise only listed dunders are exempt.
     """
 
     def __init__(

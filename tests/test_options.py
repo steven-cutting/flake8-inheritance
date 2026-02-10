@@ -60,6 +60,8 @@ class TestAddOptions:
             if call.args[0] == "--project-packages":
                 assert call.kwargs["parse_from_config"] is True
                 break
+        else:
+            pytest.fail("--project-packages was not registered")
 
     def test_inh002_allowed_dunders_parse_from_config(self) -> None:
         """--inh002-allowed-dunders has parse_from_config=True."""
@@ -71,6 +73,8 @@ class TestAddOptions:
             if call.args[0] == "--inh002-allowed-dunders":
                 assert call.kwargs["parse_from_config"] is True
                 break
+        else:
+            pytest.fail("--inh002-allowed-dunders was not registered")
 
     def test_project_packages_default_empty(self) -> None:
         """--project-packages defaults to empty string."""
@@ -82,17 +86,21 @@ class TestAddOptions:
             if call.args[0] == "--project-packages":
                 assert call.kwargs["default"] == ""
                 break
+        else:
+            pytest.fail("--project-packages was not registered")
 
-    def test_inh002_allowed_dunders_default_init(self) -> None:
-        """--inh002-allowed-dunders defaults to '__init__'."""
+    def test_inh002_allowed_dunders_default_none(self) -> None:
+        """--inh002-allowed-dunders defaults to None (all dunders allowed)."""
         parser = _ParserSpy()
         InheritanceChecker.add_options(parser)
 
         calls = parser.calls
         for call in calls:
             if call.args[0] == "--inh002-allowed-dunders":
-                assert call.kwargs["default"] == "__init__"
+                assert call.kwargs["default"] is None
                 break
+        else:
+            pytest.fail("--inh002-allowed-dunders was not registered")
 
 
 class TestParseOptions:
@@ -182,7 +190,7 @@ class TestOptionsIntegration:
         yield
         # Reset to defaults
         InheritanceChecker._project_packages = ()
-        InheritanceChecker._inh002_allowed_dunders = ("__init__",)
+        InheritanceChecker._inh002_allowed_dunders = None
 
     def test_project_packages_flags_absolute_import(self) -> None:
         """With --project-packages set, absolute imports from that package trigger INH001."""
@@ -220,9 +228,9 @@ class TestOptionsIntegration:
 
         assert results == []
 
-    def test_allowed_dunders_init_allowed_by_default(self) -> None:
-        """__init__ is allowed in ABCs by default."""
-        options = argparse.Namespace(project_packages="", inh002_allowed_dunders="__init__")
+    def test_allowed_dunders_all_allowed_by_default(self) -> None:
+        """Without config, dunder methods in ABCs are all allowed."""
+        options = argparse.Namespace(project_packages="", inh002_allowed_dunders=None)
         InheritanceChecker.parse_options(options)
 
         source = """\
@@ -231,6 +239,9 @@ class TestOptionsIntegration:
             class MyABC(ABC):
                 def __init__(self):
                     self.x = 1
+
+                def __repr__(self):
+                    return "MyABC"
 
                 @abstractmethod
                 def do_something(self):
@@ -295,3 +306,10 @@ class TestOptionsIntegration:
         # __init__ and __repr__ allowed, __str__ flagged
         assert len(results) == 1
         assert "__str__" in results[0][2]
+
+    def test_missing_allowed_dunders_uses_none(self) -> None:
+        """None keeps default behavior (all dunders allowed)."""
+        options = argparse.Namespace(project_packages="", inh002_allowed_dunders=None)
+        InheritanceChecker.parse_options(options)
+
+        assert InheritanceChecker._inh002_allowed_dunders is None
