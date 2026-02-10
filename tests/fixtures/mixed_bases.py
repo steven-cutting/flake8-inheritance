@@ -8,4 +8,5 @@ from .models import InternalBase
 class MixedChild(InternalBase, OrderedDict):
     """INH001 for InternalBase only; OrderedDict is stdlib."""
 
-    pass
+    def __init__(self, *args, **kwargs) -> None:
+        OrderedDict.__init__(self, *args, **kwargs)
