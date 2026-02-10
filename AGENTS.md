@@ -1,4 +1,4 @@
-# CLAUDE.md — AI Agent Instructions for flake8-inheritance
+# AI Agent Instructions for flake8-inheritance
 
 ## Project Overview
 
