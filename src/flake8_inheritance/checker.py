@@ -46,7 +46,8 @@ class InheritanceChecker:
         abc_visitor = ABCPurityVisitor(tracker)
         abc_visitor.visit(self._tree)
 
+        checker_cls = type(self)
         for inh_error in inh_visitor.errors:
-            yield inh_error.as_flake8_tuple()
+            yield (inh_error.line, inh_error.col, inh_error.format(), checker_cls)
         for abc_error in abc_visitor.errors:
-            yield abc_error.as_flake8_tuple()
+            yield (abc_error.line, abc_error.col, abc_error.format(), checker_cls)

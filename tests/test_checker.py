@@ -6,7 +6,6 @@ import ast
 import textwrap
 
 from flake8_inheritance.checker import InheritanceChecker
-from flake8_inheritance.visitors import ABCPurityError, InheritanceError
 
 
 def _run_checker(source: str) -> list[tuple[int, int, str, type]]:
@@ -36,7 +35,7 @@ class TestCheckerINH001:
         assert col == 0
         assert "INH001" in message
         assert "Base" in message
-        assert cls is InheritanceError
+        assert cls is InheritanceChecker
 
     def test_relative_import_inheritance(self) -> None:
         """Inheriting from a relative import triggers INH001."""
@@ -125,7 +124,7 @@ class TestCheckerINH002:
         assert "INH002" in message
         assert "MyABC" in message
         assert "concrete_method" in message
-        assert cls is ABCPurityError
+        assert cls is InheritanceChecker
 
     def test_pure_abc_no_errors(self) -> None:
         """An ABC with only abstract methods produces no errors."""
@@ -153,6 +152,42 @@ class TestCheckerINH002:
                     pass
         """
         assert _run_checker(source) == []
+
+
+class TestCheckerPluginType:
+    """The 4th element of each yielded tuple must be the checker class."""
+
+    def test_inh001_yields_checker_class(self) -> None:
+        """INH001 tuples carry InheritanceChecker as the plugin type."""
+        source = """\
+            class Base:
+                pass
+
+            class Child(Base):
+                pass
+        """
+        results = _run_checker(source)
+
+        assert len(results) == 1
+        assert results[0][3] is InheritanceChecker
+
+    def test_inh002_yields_checker_class(self) -> None:
+        """INH002 tuples carry InheritanceChecker as the plugin type."""
+        source = """\
+            from abc import ABC, abstractmethod
+
+            class MyABC(ABC):
+                @abstractmethod
+                def abstract_method(self):
+                    pass
+
+                def concrete_method(self):
+                    return 42
+        """
+        results = _run_checker(source)
+
+        assert len(results) == 1
+        assert results[0][3] is InheritanceChecker
 
 
 class TestCheckerCombined:
