@@ -21,9 +21,12 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 slow = pytest.mark.slow
 
@@ -46,6 +49,7 @@ def _run_flake8(target: Path) -> subprocess.CompletedProcess[str]:
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
 
 
