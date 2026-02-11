@@ -16,13 +16,26 @@ if TYPE_CHECKING:
 _FLAKE8_SELECT_INH = """\
 [flake8]
 select = INH
+enable-extensions = INH
 """
 
 
-def test_plugin_loaded(flake8_path: Flake8Path) -> None:
-    """Plugin appears in ``flake8 --version`` output."""
-    result = flake8_path.run_flake8(extra_args=["--version"])
-    assert "flake8-inheritance" in result.out
+def test_plugin_not_enabled_by_default(flake8_path: Flake8Path) -> None:
+    """Without enable-extensions, INH rules stay inactive."""
+    (flake8_path / "example.py").write_text(
+        textwrap.dedent("""\
+            class Base:
+                pass
+
+            class Child(Base):
+                pass
+        """)
+    )
+
+    result = flake8_path.run_flake8(extra_args=["--select=INH"])
+
+    assert result.exit_code == 0
+    assert result.out_lines == []
 
 
 def test_inh001_with_config(flake8_path: Flake8Path) -> None:
@@ -31,6 +44,7 @@ def test_inh001_with_config(flake8_path: Flake8Path) -> None:
         textwrap.dedent("""\
             [flake8]
             select = INH
+            enable-extensions = INH
             project-packages = myproject
         """)
     )
