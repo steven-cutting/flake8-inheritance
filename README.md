@@ -22,18 +22,12 @@ pip install flake8-inheritance
    ```
 
 2. **Configure** `--project-packages` so the plugin knows which imports
-   are part of your project. In `setup.cfg`, `.flake8`, or `pyproject.toml`:
+   are part of your project. Add it to `.flake8` or `setup.cfg`:
 
    ```ini
    # .flake8 or setup.cfg
    [flake8]
    project-packages = myproject
-   ```
-
-   ```toml
-   # pyproject.toml
-   [tool.flake8]
-   project-packages = "myproject"
    ```
 
    Without this option, same-file inheritance and relative imports
