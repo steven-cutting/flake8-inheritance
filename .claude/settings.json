@@ -3,13 +3,13 @@
     "PreToolUse": [
       {
         "matcher": "Bash",
-        "command": "python3 .claude/hooks/check-uv-prefix.py"
+        "command": "uv run python .claude/hooks/check-uv-prefix.py"
       }
     ],
     "PostToolUse": [
       {
         "matcher": "Bash",
-        "command": "python3 .claude/hooks/post-change-reminder.py"
+        "command": "uv run python .claude/hooks/post-change-reminder.py"
       }
     ],
     "Stop": [
