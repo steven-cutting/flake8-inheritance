@@ -253,22 +253,23 @@ flake8 --select=INH src tests
   cannot resolve it statically and does not emit INH001 for that base.
   **Workaround:** favor explicit, statically imported base classes where you want
   enforcement.
-- **Import aliases are tracked correctly:** aliases such as
-  `from pkg.module import Base as RenamedBase` are resolved to the original
-  import path, so behavior is the same as using the unaliased name.
+- **Import aliases keep only top-level package classification:** aliases such as
+  `from pkg.module import Base as RenamedBase` are tracked under `RenamedBase`,
+  but classification still uses only the top-level package (`pkg`), not the
+  full defining module path (`pkg.module`).
 - **Star imports are skipped for unresolved names:** with
   `from pkg.module import *`, names introduced indirectly cannot be reliably
   mapped to import paths, so inheritance checks for those names are skipped.
   **Workaround:** replace star imports with explicit imports.
-- **Re-exports through `__init__.py` are classified by written import path:** if
-  a symbol is re-exported, the plugin classifies it using the path used in your
-  import statement rather than tracing through package internals.
-  **Workaround:** import directly from the defining module when classification
-  precision matters.
+- **Re-exports through `__init__.py` are classified by top-level package name:**
+  imports like `from pkg import X` are classified as `pkg` without tracing to
+  a defining submodule, so re-exports are not distinguished from direct exports.
+  **Workaround:** import directly from the defining module when that distinction
+  matters.
 - **Analysis is single-file only:** decisions are made from one file's AST and
   import statements without cross-file type inference.
-  **Workaround:** keep `project-packages` configured and use explicit imports to
-  maximize static resolvability.
+  **Workaround:** configure `project-packages` and use explicit imports to improve
+  internal/external classification accuracy within this single-file model.
 
 ## License
 
