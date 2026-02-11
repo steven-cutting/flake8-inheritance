@@ -21,7 +21,7 @@ project classes where composition would be more appropriate). It flags the latte
 
 **Triggers** when a class inherits from another class defined in the same file,
 imported via a relative import, or imported from a package matching the
-configured `--project-package` option.
+configured `--project-packages` option.
 
 Before (triggers INH001):
 
@@ -31,7 +31,9 @@ class Engine:
         return "running"
 
 
-class Car(Engine):  # INH001: Inheritance from internal class 'Engine'
+# INH001 Inheritance from internal class 'Engine' is not
+# allowed (use composition instead)
+class Car(Engine):
     def drive(self):
         return self.start()
 ```
@@ -69,7 +71,10 @@ class Repository(ABC):
     def get(self, id):
         ...
 
-    def get_or_none(self, id):  # INH002: concrete method 'get_or_none'
+    # INH002 Abstract base class 'Repository' contains
+    # concrete method 'get_or_none'
+    # (ABCs should only define abstract methods)
+    def get_or_none(self, id):
         try:
             return self.get(id)
         except KeyError:
