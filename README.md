@@ -300,6 +300,29 @@ flake8 --select=INH src tests
   **Workaround:** configure `project-packages` and use explicit imports to improve
   internal/external classification accuracy within this single-file model.
 
+## Testing and Quality Assurance
+
+### Smoke Testing
+
+This project includes smoke tests that validate the plugin against real-world codebases.
+The smoke tests run the plugin against popular open-source projects (CPython, requests, FastAPI)
+to ensure stability and catch potential false positives.
+
+To run smoke tests:
+
+```bash
+python3 scripts/smoke_test.py
+```
+
+This will:
+- Clone the target repositories to a temporary directory
+- Run the plugin against each codebase
+- Generate a detailed report in `SMOKE_TEST_RESULTS.md`
+- Report any crashes or unexpected errors
+
+See [SMOKE_TEST_RESULTS.md](SMOKE_TEST_RESULTS.md) for the latest test results and
+interpretation guidelines.
+
 ## License
 
 BSD-3-Clause

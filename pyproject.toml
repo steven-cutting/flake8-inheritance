@@ -106,6 +106,13 @@ ignore = [
 "tests/fixtures/**/*.py" = [
     "ALL",     # fixtures are sample code, not production — skip all lint rules
 ]
+"scripts/**/*.py" = [
+    "T201",    # print allowed in scripts
+    "S603",    # subprocess call allowed in scripts
+    "S607",    # partial executable path allowed in scripts
+    "PLR0915", # many statements allowed in scripts
+    "PLR2004", # magic values allowed in scripts
+]
 
 [tool.mypy]
 python_version = "3.11"
