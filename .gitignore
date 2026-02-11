@@ -34,6 +34,5 @@ coverage.xml
 .DS_Store
 Thumbs.db
 
-# Smoke test artifacts
-SMOKE_TEST_RESULTS.md
+# Smoke test temporary artifacts (but keep SMOKE_TEST_RESULTS.md in repo)
 SMOKE_TEST_RESULTS.json
