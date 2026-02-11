@@ -1084,6 +1084,137 @@ class Child(models.Base):
         assert flagged_bases(errors) == ["models.Base"]
 
 
+class TestAsFlake8Tuple:
+    """as_flake8_tuple returns the correct 4-tuple for flake8."""
+
+    def test_inheritance_error_as_flake8_tuple(self) -> None:
+        """InheritanceError.as_flake8_tuple returns (line, col, message, type)."""
+        errors = collect_errors("class A:\n    pass\n\nclass B(A):\n    pass\n")
+        assert len(errors) == 1
+        line, col, message, cls = errors[0].as_flake8_tuple()
+        assert line == errors[0].line
+        assert col == errors[0].col
+        assert "INH001" in message
+        assert cls is InheritanceError
+
+    def test_abc_purity_error_as_flake8_tuple(self) -> None:
+        """ABCPurityError.as_flake8_tuple returns (line, col, message, type)."""
+        source = """\
+from abc import ABC
+
+class MyABC(ABC):
+    def foo(self):
+        return 1
+"""
+        errors = collect_inh002_errors(source)
+        assert len(errors) == 1
+        line, col, message, cls = errors[0].as_flake8_tuple()
+        assert line == errors[0].line
+        assert col == errors[0].col
+        assert "INH002" in message
+        assert cls is ABCPurityError
+
+
+class TestResolveBaseEdgeCases:
+    """Edge cases for _resolve_base that hit uncovered branches."""
+
+    def test_attribute_chain_ending_in_non_name(self) -> None:
+        """An attribute base whose chain ends in a non-Name node returns None."""
+        # e.g. class Foo(func().attr): ... — func() is a Call, not Name/Attribute
+        source = """\
+class Child(func().attr):
+    pass
+"""
+        errors = collect_errors(source)
+        # Dynamic base (unresolvable) should be silently skipped
+        assert errors == []
+
+    def test_collect_module_class_names_non_module(self) -> None:
+        """collect_module_class_names with a non-Module AST node returns empty set."""
+        # Pass a FunctionDef node instead of a Module
+        func_node = ast.parse("def foo(): pass").body[0]
+        assert collect_module_class_names(func_node) == set()
+
+
+class TestAbcmetaKeywordEdgeCases:
+    """Edge cases for _is_abcmeta_keyword in ABCPurityVisitor."""
+
+    def test_non_metaclass_keyword_ignored(self) -> None:
+        """A keyword argument that is not 'metaclass' is not treated as ABCMeta."""
+        source = """\
+from abc import ABCMeta
+
+class MyClass(other_kwarg=ABCMeta):
+    def foo(self):
+        return 1
+"""
+        errors = collect_inh002_errors(source)
+        # Not an ABC (no metaclass=ABCMeta), so no INH002 errors
+        assert errors == []
+
+    def test_metaclass_with_unresolvable_attribute(self) -> None:
+        """metaclass=func().ABCMeta should not be detected as ABCMeta."""
+        source = """\
+import abc
+
+class MyClass(metaclass=get_module().ABCMeta):
+    def foo(self):
+        return 1
+"""
+        errors = collect_inh002_errors(source)
+        # Cannot resolve get_module().ABCMeta — not an ABC
+        assert errors == []
+
+
+class TestAbstractmethodEdgeCases:
+    """Edge cases for _is_abstractmethod decorator resolution."""
+
+    def test_non_abstractmethod_attribute_decorator(self) -> None:
+        """A module-qualified decorator that isn't abstractmethod is not treated as abstract."""
+        source = """\
+import abc
+import functools
+
+class MyABC(abc.ABC):
+    @functools.lru_cache
+    def concrete_method(self):
+        return 42
+"""
+        errors = collect_inh002_errors(source)
+        assert len(errors) == 1
+        assert errors[0].method == "concrete_method"
+
+    def test_attribute_decorator_non_abc_module(self) -> None:
+        """Module-qualified decorator from non-abc module is not abstractmethod."""
+        source = """\
+import abc
+import mydecorators
+
+class MyABC(abc.ABC):
+    @mydecorators.abstractmethod
+    def method(self):
+        pass
+"""
+        errors = collect_inh002_errors(source)
+        # mydecorators.abstractmethod is not abc.abstractmethod
+        assert len(errors) == 1
+        assert errors[0].method == "method"
+
+    def test_attribute_decorator_wrong_attr_name(self) -> None:
+        """abc.some_other_decorator is not abstractmethod."""
+        source = """\
+import abc
+
+class MyABC(abc.ABC):
+    @abc.some_other_decorator
+    def method(self):
+        pass
+"""
+        errors = collect_inh002_errors(source)
+        assert len(errors) == 1
+        assert errors[0].method == "method"
+
+
 class TestMixedInternalExternalBases:
     """Multiple inheritance with mixed internal and external bases."""
 
