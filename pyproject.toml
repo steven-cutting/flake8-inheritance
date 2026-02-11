@@ -44,12 +44,14 @@ test = [
     "pytest-timeout>=2.3",
     "coverage>=7.6",
     "pytest-flake8-path>=1.5",
+    "PyYAML>=6.0",
 ]
 dev = [
     "flake8-inheritance[test]",
     "ruff>=0.6.9",
     "mypy>=1.11",
     "pymarkdownlnt>=0.9.17",
+    "types-PyYAML>=6.0",
 ]
 
 [dependency-groups]
