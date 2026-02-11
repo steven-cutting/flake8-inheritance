@@ -4,7 +4,8 @@ import yaml
 
 
 def test_pre_commit_hooks_yaml_has_required_hook_definition() -> None:
-    hooks_file = Path(__file__).resolve().parents[1] / ".pre-commit-hooks.yaml"
+    repo_root = Path(__file__).resolve().parent.parent
+    hooks_file = repo_root / ".pre-commit-hooks.yaml"
 
     assert hooks_file.exists()
 
