@@ -1,5 +1,8 @@
 # flake8-inheritance
 
+[![CI](https://github.com/steven-cutting/flake8-inheritance/actions/workflows/ci.yml/badge.svg)](https://github.com/steven-cutting/flake8-inheritance/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/flake8-inheritance.svg)](https://pypi.org/project/flake8-inheritance/)
+[![Python versions](https://img.shields.io/pypi/pyversions/flake8-inheritance.svg)](https://pypi.org/project/flake8-inheritance/)
 ![AI-Built](https://img.shields.io/badge/ai-built-brightgreen?logo=probot&logoColor=%2300B0D8)
 
 A Flake8 plugin that nudges you toward composition over inheritance.
@@ -8,6 +11,12 @@ composition would reduce coupling — and flags concrete methods in abstract
 base classes that should remain pure interfaces.
 
 > **Status:** Under development. Not yet published to PyPI.
+
+## Compatibility
+
+- **Python:** 3.11, 3.12, 3.13
+- **Flake8:** 6.x, 7.x
+- **Operating systems:** Linux, macOS, Windows
 
 ## Installation
 
