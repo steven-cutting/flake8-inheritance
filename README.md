@@ -115,7 +115,7 @@ settings used to adopt `flake8-inheritance` in real projects.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--project-packages` | empty | Absolute imports are external unless package is configured |
+| `--project-packages` | empty (unset) | Absolute imports are external unless package is configured |
 | `--inh002-allowed-dunders` | unset (`None`) | All dunder methods are allowed in ABCs |
 
 ### `--project-packages`
@@ -131,7 +131,7 @@ project-packages = myproject,myproject_utils
 
 **Default:** empty (unset)
 
-When left unset, the plugin still flags:
+When left unset (or set to an explicit empty value), the plugin still flags:
 
 - inheritance from classes defined in the same file
 - inheritance via relative imports (for example, `from .base import Base`)
@@ -170,7 +170,7 @@ project-packages = myproject,myproject_utils
 inh002-allowed-dunders = __init__,__repr__
 
 # Flake8-native filtering controls
-select = INH
+select = INH,E,F,W
 extend-ignore = E203
 per-file-ignores =
     tests/*:INH001
