@@ -1,3 +1,6 @@
+![Static Badge](https://img.shields.io/badge/ai-built-project?style=plastic&logo=%F0%9F%A4%96&label=%F0%9F%A4%96)
+
+
 # flake8-inheritance
 
 A Flake8 plugin that nudges you toward composition over inheritance.
