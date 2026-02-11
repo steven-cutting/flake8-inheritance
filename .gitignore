@@ -33,3 +33,7 @@ coverage.xml
 # OS
 .DS_Store
 Thumbs.db
+
+# Smoke test artifacts
+SMOKE_TEST_RESULTS.md
+SMOKE_TEST_RESULTS.json
