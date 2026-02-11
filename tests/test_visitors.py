@@ -1281,3 +1281,42 @@ class Child(LocalBase, Mixin, Model):
         errors = collect_errors(source, project_package="myproject")
         expected = ["LocalBase", "Mixin", "Model"]
         assert flagged_bases(errors) == expected
+
+
+class TestINH001ZeroConfigBehavior:
+    """Zero-config mode flags same-file and relative-import inheritance.
+
+    Without --project-packages, absolute imports from the user's own
+    packages are treated as external and silently allowed.
+    """
+
+    def test_same_file_flagged_without_project_packages(self) -> None:
+        source = """\
+class Base:
+    pass
+
+class Child(Base):
+    pass
+"""
+        errors = collect_errors(source, project_package=None)
+        assert flagged_bases(errors) == ["Base"]
+
+    def test_relative_import_flagged_without_project_packages(self) -> None:
+        source = """\
+from .models import Base
+
+class Child(Base):
+    pass
+"""
+        errors = collect_errors(source, project_package=None)
+        assert flagged_bases(errors) == ["Base"]
+
+    def test_absolute_project_import_allowed_without_project_packages(self) -> None:
+        source = """\
+from myproject.models import Base
+
+class Child(Base):
+    pass
+"""
+        errors = collect_errors(source, project_package=None)
+        assert flagged_bases(errors) == []
