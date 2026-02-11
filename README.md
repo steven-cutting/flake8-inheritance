@@ -1,7 +1,6 @@
-![Static Badge](https://img.shields.io/badge/ai-built-project?style=plastic&logo=%F0%9F%A4%96&label=%F0%9F%A4%96)
-
-
 # flake8-inheritance
+
+![Static Badge](https://img.shields.io/badge/ai-built-project?style=plastic&logo=%F0%9F%A4%96&label=%F0%9F%A4%96)
 
 A Flake8 plugin that nudges you toward composition over inheritance.
 It detects when classes inherit from concrete internal classes — cases where
