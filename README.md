@@ -1,6 +1,6 @@
 # flake8-inheritance
 
-[![CI](https://github.com/steven-cutting/flake8-inheritance/actions/workflows/ci.yml/badge.svg)](https://github.com/steven-cutting/flake8-inheritance/actions/workflows/ci.yml)
+[![CI](https://github.com/steven-cutting/flake8-composition-over-inheritance/actions/workflows/ci.yml/badge.svg)](https://github.com/steven-cutting/flake8-composition-over-inheritance/actions/workflows/ci.yml)
 [![PyPI version](https://img.shields.io/pypi/v/flake8-inheritance.svg)](https://pypi.org/project/flake8-inheritance/)
 [![Python versions](https://img.shields.io/pypi/pyversions/flake8-inheritance.svg)](https://pypi.org/project/flake8-inheritance/)
 ![AI-Built](https://img.shields.io/badge/ai-built-brightgreen?logo=probot&logoColor=%2300B0D8)
