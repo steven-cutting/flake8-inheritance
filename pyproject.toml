@@ -100,6 +100,9 @@ ignore = [
     "ANN",     # annotations not required in tests
     "SLF001",  # private member access allowed in tests
 ]
+"tests/fixtures/**/*.py" = [
+    "ALL",     # fixtures are sample code, not production — skip all lint rules
+]
 
 [tool.mypy]
 python_version = "3.11"
@@ -111,6 +114,10 @@ show_error_codes = true
 [[tool.mypy.overrides]]
 module = "flake8.*"
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.fixtures.*"
+ignore_errors = true
 
 [tool.codespell]
 ignore-words-list = "INH"

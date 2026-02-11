@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from pathlib import Path
 
 import pytest
 
@@ -16,6 +17,13 @@ from flake8_inheritance.visitors import (
     InheritanceVisitor,
     collect_module_class_names,
 )
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+def _read_fixture(name: str) -> str:
+    """Read and return the contents of a fixture file."""
+    return (FIXTURES_DIR / name).read_text(encoding="utf-8")
 
 
 def track_imports(source: str) -> ImportTracker:
@@ -239,10 +247,7 @@ class TestINH001DynamicBases:
     """Dynamic base classes should be silently skipped."""
 
     def test_dynamic_base_skipped(self) -> None:
-        source = """\
-class Child(get_base()):
-    pass
-"""
+        source = _read_fixture("dynamic_bases.py")
         assert collect_errors(source) == []
 
     def test_dynamic_base_with_regular_base(self) -> None:
@@ -388,18 +393,7 @@ class TestINH002PureABC:
     """Pure ABCs (only abstract methods) should not be flagged."""
 
     def test_pure_abc_passes(self) -> None:
-        source = """\
-from abc import ABC, abstractmethod
-
-class MyABC(ABC):
-    @abstractmethod
-    def do_thing(self):
-        pass
-
-    @abstractmethod
-    def do_other(self):
-        pass
-"""
+        source = _read_fixture("pure_abc.py")
         assert collect_inh002_errors(source) == []
 
     def test_empty_abc_passes(self) -> None:
@@ -844,12 +838,7 @@ class TestStarImports:
 
     def test_star_import_no_crash(self) -> None:
         """``from myproject.models import *`` must not crash."""
-        source = """\
-from myproject.models import *
-
-class Child(Base):
-    pass
-"""
+        source = _read_fixture("star_imports.py")
         # Should not raise — star imports are silently recorded
         errors = collect_errors(source, project_package="myproject")
         # "Base" is not explicitly imported, so it's unknown — no error
@@ -897,11 +886,13 @@ class TestEmptyAndNoClassFiles:
     """Empty files and files with no class definitions."""
 
     def test_empty_file_inh001(self) -> None:
-        errors = collect_errors("")
+        source = _read_fixture("empty_file.py")
+        errors = collect_errors(source)
         assert errors == []
 
     def test_empty_file_inh002(self) -> None:
-        errors = collect_inh002_errors("")
+        source = _read_fixture("empty_file.py")
+        errors = collect_inh002_errors(source)
         assert errors == []
 
     def test_file_with_only_imports(self) -> None:
@@ -913,13 +904,7 @@ from collections import OrderedDict
         assert collect_inh002_errors(source) == []
 
     def test_file_with_only_functions(self) -> None:
-        source = """\
-def foo():
-    return 42
-
-def bar(x):
-    return x + 1
-"""
+        source = _read_fixture("no_classes.py")
         assert collect_errors(source) == []
         assert collect_inh002_errors(source) == []
 
@@ -932,7 +917,8 @@ z = [1, 2, 3]
         assert collect_errors(source) == []
 
     def test_collect_module_class_names_empty(self) -> None:
-        tree = ast.parse("")
+        source = _read_fixture("empty_file.py")
+        tree = ast.parse(source)
         assert collect_module_class_names(tree) == set()
 
     def test_collect_module_class_names_no_classes(self) -> None:
