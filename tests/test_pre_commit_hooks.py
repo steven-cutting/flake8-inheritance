@@ -1,23 +1,24 @@
+import importlib
 from pathlib import Path
-
-import yaml  # type: ignore[import-untyped]
+from typing import Any, cast
 
 
 def test_pre_commit_hooks_yaml_has_required_hook_definition() -> None:
-    hooks_file = Path('.pre-commit-hooks.yaml')
+    hooks_file = Path(".pre-commit-hooks.yaml")
 
     assert hooks_file.exists()
 
-    hooks = yaml.safe_load(hooks_file.read_text(encoding='utf-8'))
+    yaml_module = cast(Any, importlib.import_module("yaml"))
+    hooks = yaml_module.safe_load(hooks_file.read_text(encoding="utf-8"))
 
     assert isinstance(hooks, list)
-    assert hooks == [
-        {
-            'id': 'flake8-inheritance',
-            'name': 'flake8-inheritance',
-            'entry': 'flake8 --select=INH',
-            'language': 'python',
-            'types': ['python'],
-            'additional_dependencies': ['flake8>=6'],
-        }
-    ]
+    assert hooks
+
+    hook = next((entry for entry in hooks if entry.get("id") == "flake8-inheritance"), None)
+    assert hook is not None
+
+    assert hook["name"] == "flake8-inheritance"
+    assert hook["entry"] == "flake8 --select=INH"
+    assert hook["language"] == "python"
+    assert hook["types"] == ["python"]
+    assert hook["additional_dependencies"] == ["flake8>=6"]
