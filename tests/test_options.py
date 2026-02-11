@@ -180,6 +180,46 @@ class TestParseOptions:
 
         assert InheritanceChecker._inh002_allowed_dunders == ("__init__", "__new__")
 
+    def test_project_packages_as_list(self) -> None:
+        """Flake8 may pass project_packages as a pre-split list."""
+        options = argparse.Namespace(
+            project_packages=["myproject", "otherlib"],
+            inh002_allowed_dunders=None,
+        )
+        InheritanceChecker.parse_options(options)
+
+        assert InheritanceChecker._project_packages == ("myproject", "otherlib")
+
+    def test_project_packages_as_list_strips_whitespace(self) -> None:
+        """List items with whitespace are stripped; empty items are dropped."""
+        options = argparse.Namespace(
+            project_packages=["  myproject  ", "", "  otherlib"],
+            inh002_allowed_dunders=None,
+        )
+        InheritanceChecker.parse_options(options)
+
+        assert InheritanceChecker._project_packages == ("myproject", "otherlib")
+
+    def test_allowed_dunders_as_list(self) -> None:
+        """Flake8 may pass inh002_allowed_dunders as a pre-split list."""
+        options = argparse.Namespace(
+            project_packages="",
+            inh002_allowed_dunders=["__init__", "__repr__"],
+        )
+        InheritanceChecker.parse_options(options)
+
+        assert InheritanceChecker._inh002_allowed_dunders == ("__init__", "__repr__")
+
+    def test_allowed_dunders_as_list_strips_whitespace(self) -> None:
+        """List items with whitespace are stripped; empty items are dropped."""
+        options = argparse.Namespace(
+            project_packages="",
+            inh002_allowed_dunders=["  __init__  ", "", "  __new__"],
+        )
+        InheritanceChecker.parse_options(options)
+
+        assert InheritanceChecker._inh002_allowed_dunders == ("__init__", "__new__")
+
 
 class TestOptionsIntegration:
     """Options affect checker behavior through run()."""
@@ -313,3 +353,47 @@ class TestOptionsIntegration:
         InheritanceChecker.parse_options(options)
 
         assert InheritanceChecker._inh002_allowed_dunders is None
+
+    def test_multiple_project_packages_deduplicate_errors(self) -> None:
+        """Multiple --project-packages merge errors without duplicates."""
+        options = argparse.Namespace(
+            project_packages=["myproject", "otherlib"],
+            inh002_allowed_dunders=None,
+        )
+        InheritanceChecker.parse_options(options)
+
+        source = """\
+            from myproject.models import Base
+            from otherlib.core import Mixin
+
+            class Child(Base, Mixin):
+                pass
+        """
+        tree = ast.parse(textwrap.dedent(source))
+        results = list(InheritanceChecker(tree).run())
+
+        # Both bases should be flagged, no duplicates
+        messages = [r[2] for r in results]
+        assert len(results) == 2  # noqa: PLR2004
+        assert any("Base" in m for m in messages)
+        assert any("Mixin" in m for m in messages)
+
+    def test_multiple_project_packages_shared_error_not_duplicated(self) -> None:
+        """When the same base is flagged by multiple trackers, it appears once."""
+        options = argparse.Namespace(
+            project_packages=["myproject", "myproject"],
+            inh002_allowed_dunders=None,
+        )
+        InheritanceChecker.parse_options(options)
+
+        source = """\
+            from myproject.models import Base
+
+            class Child(Base):
+                pass
+        """
+        tree = ast.parse(textwrap.dedent(source))
+        results = list(InheritanceChecker(tree).run())
+
+        assert len(results) == 1
+        assert "Base" in results[0][2]
