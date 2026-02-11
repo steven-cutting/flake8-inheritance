@@ -32,3 +32,7 @@ decree new "Title"   # propose a new decision
 ```
 
 ADRs live in `doc/adr/` and follow the Nygard format (Context, Decision, Consequences).
+
+## Releasing
+
+For instructions on creating and publishing a new release, see [RELEASING.md](./RELEASING.md).
