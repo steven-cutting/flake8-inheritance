@@ -40,6 +40,7 @@ class InheritanceChecker:
 
     name: ClassVar[str] = "flake8-inheritance"
     version: ClassVar[str] = importlib.metadata.version("flake8-inheritance")
+    off_by_default: ClassVar[bool] = True
 
     _project_packages: ClassVar[tuple[str, ...]] = ()
     _inh002_allowed_dunders: ClassVar[tuple[str, ...] | None] = None

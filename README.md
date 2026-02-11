@@ -32,12 +32,26 @@ pip install flake8-inheritance
    pip install flake8-inheritance
    ```
 
-2. **Configure** `--project-packages` so the plugin knows which imports
+2. **Enable** the plugin rules (it is off by default):
+
+   ```bash
+   flake8 --enable-extensions=INH src/
+   ```
+
+   Or configure this once in `.flake8` / `setup.cfg`:
+
+   ```ini
+   [flake8]
+   enable-extensions = INH
+   ```
+
+3. **Configure** `--project-packages` so the plugin knows which imports
    are part of your project. Add it to `.flake8` or `setup.cfg`:
 
    ```ini
    # .flake8 or setup.cfg
    [flake8]
+   enable-extensions = INH
    project-packages = myproject
    ```
 
@@ -46,7 +60,7 @@ pip install flake8-inheritance
    absolute imports from your own packages are treated as external
    and silently allowed.
 
-3. **Run** Flake8:
+4. **Run** Flake8:
 
    ```bash
    flake8 src/
@@ -126,6 +140,7 @@ settings used to adopt `flake8-inheritance` in real projects.
 
 | Option | Default | Meaning |
 |---|---|---|
+| `--enable-extensions` | unset | Plugin checks are disabled until `INH` is enabled |
 | `--project-packages` | empty (unset) | Absolute imports are external unless package is configured |
 | `--inh002-allowed-dunders` | unset (`None`) | All dunder methods are allowed in ABCs |
 
@@ -137,6 +152,7 @@ libraries.
 
 ```ini
 [flake8]
+enable-extensions = INH
 project-packages = myproject,myproject_utils
 ```
 
@@ -157,6 +173,7 @@ concrete methods in ABCs (e.g., `__init__`, `__repr__`).
 
 ```ini
 [flake8]
+enable-extensions = INH
 inh002-allowed-dunders = __init__,__repr__
 ```
 
@@ -177,6 +194,7 @@ uses.
 
 ```ini
 [flake8]
+enable-extensions = INH
 project-packages = myproject,myproject_utils
 inh002-allowed-dunders = __init__,__repr__
 
@@ -191,6 +209,7 @@ per-file-ignores =
 
 ```ini
 [flake8]
+enable-extensions = INH
 project-packages = myproject,myproject_utils
 inh002-allowed-dunders = __init__,__repr__
 
@@ -210,6 +229,7 @@ this format.
 
 ```toml
 [tool.flake8]
+enable-extensions = ["INH"]
 project-packages = ["myproject", "myproject_utils"]
 inh002-allowed-dunders = ["__init__", "__repr__"]
 
