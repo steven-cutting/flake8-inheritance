@@ -36,8 +36,10 @@ pip install flake8-inheritance
    project-packages = "myproject"
    ```
 
-   Without this option only same-file inheritance is flagged; cross-module
-   inheritance from your own packages is silently allowed.
+   Without this option, same-file inheritance and relative imports
+   (e.g. `from .models import Base`) are still flagged. However,
+   absolute imports from your own packages are treated as external
+   and silently allowed.
 
 3. **Run** Flake8:
 
