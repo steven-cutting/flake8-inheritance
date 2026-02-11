@@ -67,8 +67,9 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["-q", "--disable-warnings"]
+addopts = ["-q", "--disable-warnings", "-m", "not slow"]
 timeout = 5
+markers = ["slow: marks tests that clone external repos (deselect with '-m \"not slow\"')"]
 
 [tool.coverage.run]
 branch = true
