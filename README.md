@@ -246,6 +246,30 @@ Example enforced command once ready:
 flake8 --select=INH src tests
 ```
 
+## Known limitations
+
+- **Dynamic base classes are skipped:** if a base class is constructed dynamically
+  (for example, through metaprogramming or runtime factory calls), the plugin
+  cannot resolve it statically and does not emit INH001 for that base.
+  **Workaround:** favor explicit, statically imported base classes where you want
+  enforcement.
+- **Import aliases are tracked correctly:** aliases such as
+  `from pkg.module import Base as RenamedBase` are resolved to the original
+  import path, so behavior is the same as using the unaliased name.
+- **Star imports are skipped for unresolved names:** with
+  `from pkg.module import *`, names introduced indirectly cannot be reliably
+  mapped to import paths, so inheritance checks for those names are skipped.
+  **Workaround:** replace star imports with explicit imports.
+- **Re-exports through `__init__.py` are classified by written import path:** if
+  a symbol is re-exported, the plugin classifies it using the path used in your
+  import statement rather than tracing through package internals.
+  **Workaround:** import directly from the defining module when classification
+  precision matters.
+- **Analysis is single-file only:** decisions are made from one file's AST and
+  import statements without cross-file type inference.
+  **Workaround:** keep `project-packages` configured and use explicit imports to
+  maximize static resolvability.
+
 ## License
 
 BSD-3-Clause
