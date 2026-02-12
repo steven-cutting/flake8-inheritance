@@ -16,6 +16,10 @@ The option accepts a comma-separated list of fully qualified class references
 configurable via CLI flag and config files (`.flake8`, `setup.cfg`,
 `pyproject.toml` via flake8-pyproject).
 
+Also define a hint-variant error message in `codes.py` for the case where a
+relative import's base class suffix-matches a whitelist entry but cannot be
+confirmed due to missing `--project-packages` configuration.
+
 **Implementation details:**
 
 - Register the option in `add_options()` in `checker.py`
@@ -24,6 +28,24 @@ configurable via CLI flag and config files (`.flake8`, `setup.cfg`,
   attribute `_inh001_whitelisted_bases`
 - Follow the existing pattern used by `--project-packages` and
   `--inh002-allowed-dunders`
+- Add to `codes.py` a hint-variant message for INH001:
+
+```python
+INH001_HINT = ErrorCode(
+    code="INH001",
+    message=(
+        "Inheritance from internal class '{base}' is not allowed "
+        "(use composition instead). "
+        "Note: '{base}' may match whitelisted entry '{entry}'; "
+        "configure --project-packages to enable whitelist matching "
+        "for relative imports"
+    ),
+)
+```
+
+This keeps the same `INH001` code (so `# noqa: INH001` still suppresses it)
+but gives the user actionable guidance. The `{entry}` placeholder names the
+specific whitelist entry that suffix-matched.
 
 **Acceptance criteria:**
 
@@ -32,6 +54,8 @@ configurable via CLI flag and config files (`.flake8`, `setup.cfg`,
 - [ ] Whitespace around entries is stripped
 - [ ] Duplicate entries are deduplicated
 - [ ] `parse_options` stores a `frozenset[str]` on the class
+- [ ] `INH001_HINT` defined in `codes.py` with `{base}` and `{entry}` placeholders
+- [ ] `INH001_HINT.code` is still `"INH001"` (same noqa suppression)
 
 **Complexity:** Low
 
@@ -219,25 +243,58 @@ from Ticket 3 **before** implementing it.
 
 **Description:**
 Modify the INH001 checking logic so that a base class whose fully qualified
-name matches a whitelist entry is silently skipped (no error emitted).
+name matches a whitelist entry is silently skipped (no error emitted). For
+relative imports where confirmation is not possible, emit INH001 with a hint
+when there is a suffix match against a whitelist entry.
 
 **Implementation details:**
 
 - `InheritanceChecker.run()` passes the parsed `_inh001_whitelisted_bases`
-  frozenset to `InheritanceVisitor` (or to a filtering step)
+  frozenset and `_project_packages` to `InheritanceVisitor` (or to a
+  filtering step)
 - Before recording an INH001 error, resolve the base to its fully qualified
   name and check membership in the whitelist frozenset
 - O(1) lookup via frozenset membership test
 - If the base is whitelisted, skip it; otherwise, report as before
 
+**Three-way decision for relative imports:**
+
+When a base is from a relative import and the whitelist is non-empty:
+
+1. **Plausible match confirmed** (via `--project-packages` + suffix + depth):
+   suppress the error entirely (Ticket 7 logic)
+2. **Suffix matches a whitelist entry but can't confirm** (because
+   `--project-packages` is not configured or under-specified): emit
+   `INH001_HINT` instead of plain `INH001`, naming the matching entry
+   and suggesting the user configure `--project-packages`
+3. **No suffix match at all**: emit plain `INH001` as usual
+
+The "suffix match" check for the hint case is simpler than plausible matching:
+given `RelativeImportInfo(level=1, module="models", name="Base")`, build
+suffix `"models.Base"` and check if any whitelist entry ends with
+`".models.Base"` or equals `"models.Base"`. This requires no
+`--project-packages` knowledge — it's a pure string suffix check. The hint
+is only emitted when this suffix matches but full plausible matching failed
+(either because `--project-packages` is empty or the prefix check didn't
+pass).
+
 **Acceptance criteria:**
 
-- [ ] Whitelisted bases produce no INH001 error
+- [ ] Whitelisted bases (exact FQN match) produce no INH001 error
 - [ ] Non-whitelisted bases still produce INH001 as before
 - [ ] Whitelist has no effect on INH002
 - [ ] Mixed bases (some whitelisted, some not) correctly report only the
       non-whitelisted violations
-- [ ] Empty whitelist preserves existing behavior exactly
+- [ ] Empty whitelist preserves existing behavior exactly (no hints emitted)
+- [ ] Relative import with suffix match + missing `--project-packages` →
+      emits `INH001_HINT` with the matching entry name
+- [ ] Relative import with suffix match + `--project-packages` configured
+      but entry has wrong prefix → emits plain `INH001` (the project-packages
+      is set, the entry just doesn't match this project — it's genuinely
+      not whitelisted)
+- [ ] Relative import with no suffix match → emits plain `INH001`
+- [ ] When multiple whitelist entries suffix-match, the hint names the first
+      (or most specific) match
 
 **Complexity:** Medium
 
@@ -247,9 +304,10 @@ name matches a whitelist entry is silently skipped (no error emitted).
 
 **Description:**
 Write end-to-end tests that exercise the full whitelist flow from option
-parsing through AST analysis.
+parsing through AST analysis, including the hint behavior for relative
+imports.
 
-**Test cases:**
+**Test cases — absolute imports (exact FQN matching):**
 
 - Same-file base whitelisted by bare name: still flagged (whitelist requires
   fully qualified name; same-file classes have no module path)
@@ -265,11 +323,30 @@ parsing through AST analysis.
 - Whitelist entry that doesn't match anything: no effect, no crash
 - Empty whitelist: all existing behavior preserved (regression guard)
 
+**Test cases — relative imports with hint behavior:**
+
+- `from .models import Base` + whitelist `"mypackage.models.Base"` +
+  NO `--project-packages`: emits `INH001` **with hint** mentioning
+  `"mypackage.models.Base"` and suggesting `--project-packages`
+- `from .models import Base` + whitelist `"mypackage.models.Base"` +
+  `--project-packages=mypackage`: emits **no error** (plausible match,
+  handled by Ticket 7)
+- `from .models import Base` + whitelist `"otherpackage.utils.Thing"` +
+  NO `--project-packages`: emits plain `INH001` (no suffix match at all)
+- `from .models import Base` + whitelist `"mypackage.models.Base"` +
+  `--project-packages=otherpkg` (configured but wrong prefix): emits
+  plain `INH001` (project-packages IS set, entry just doesn't match)
+- `from .models import Base` + empty whitelist: emits plain `INH001`
+  (no hint when whitelist is empty)
+- Hint message contains the matching whitelist entry name
+- Hint message is suppressible with `# noqa: INH001`
+
 **Acceptance criteria:**
 
 - [ ] All test cases written and initially failing
 - [ ] Tests cover both `InheritanceVisitor` directly and via
       `InheritanceChecker.run()`
+- [ ] Tests verify exact error message text for hint vs plain INH001
 - [ ] Integration test with `pytest-flake8-path` confirming CLI option works
 
 **Complexity:** Medium
@@ -387,30 +464,101 @@ def is_plausible_whitelist_match(
     return True
 ```
 
+**Three-outcome decision flow for relative imports:**
+
+When a relative import base would normally trigger INH001 and the whitelist
+is non-empty, the following logic runs:
+
+```python
+def check_relative_import_against_whitelist(
+    rel_info: RelativeImportInfo,
+    whitelist: frozenset[str],
+    project_packages: tuple[str, ...],
+) -> Literal["suppress", "hint", "flag"]:
+    """Determine how to handle a relative import base vs the whitelist.
+
+    Returns:
+        "suppress" — plausible match confirmed, emit no error
+        "hint"     — suffix matches but can't confirm, emit INH001 with hint
+        "flag"     — no match at all, emit plain INH001
+    """
+    # Build the suffix from the relative import
+    if rel_info.module:
+        suffix = f"{rel_info.module}.{rel_info.name}"
+    else:
+        suffix = rel_info.name
+
+    # Find all whitelist entries whose suffix matches
+    suffix_matches = [
+        entry for entry in whitelist
+        if entry.endswith(suffix)
+        and (entry == suffix or entry[-(len(suffix) + 1)] == ".")
+    ]
+
+    if not suffix_matches:
+        return "flag"  # No suffix match at all → plain INH001
+
+    if not project_packages:
+        # Suffix matches exist but we can't verify the prefix.
+        # Emit INH001 with a hint naming the matching entry.
+        return "hint"
+
+    # project_packages is configured — attempt plausible matching
+    for entry in suffix_matches:
+        if is_plausible_whitelist_match(rel_info, entry, project_packages):
+            return "suppress"
+
+    # project_packages IS configured and no plausible match found.
+    # Two sub-cases:
+    #   a) Entry prefix doesn't match any project package → plain INH001
+    #      (the entry belongs to a different project, not relevant)
+    #   b) Entry prefix matches but depth is impossible → plain INH001
+    #
+    # However, if entries DO start with a configured project_package but
+    # depth is the issue, that's likely a misconfiguration too. We could
+    # hint here as well, but for now we flag plainly — the user has
+    # configured project-packages, so the tool has done its best.
+    return "flag"
+```
+
 **Key design decisions:**
 
-- **False positives are acceptable**: If `from .models import Base` matches
-  both `mypackage.models.Base` and `mypackage.sub.models.Base` in the
+- **False positives are acceptable**: If `from .models import Base` plausibly
+  matches both `mypackage.models.Base` and `mypackage.sub.models.Base` in the
   whitelist, we accept the match. The user has explicitly whitelisted these
   names, so a plausible match is treated as intentional.
-- **No `--project-packages` = no relative matching**: Without knowing the
-  project package, we cannot verify the prefix. Relative imports remain
-  flagged. This is documented as a requirement for relative import whitelist
-  matching.
+- **No `--project-packages` + suffix match = hint, not silence**: When we
+  can't confirm a match, we still flag the violation but give the user
+  actionable guidance: "this might be whitelisted entry X — configure
+  `--project-packages` to let us verify." This is better than silently
+  flagging (user doesn't understand why their whitelist didn't work) and
+  better than silently suppressing (false negatives).
+- **`--project-packages` configured + no plausible match = plain INH001**:
+  The user has given us enough info to check and the check failed. No hint
+  needed — the entry genuinely doesn't match.
 - **Level is preserved for future tightening**: Even if we don't use it for
   strict filtering now, storing the level allows future refinements (e.g., if
   flake8 exposes file paths, we could resolve exactly).
+- **Hint names the specific whitelist entry**: When multiple entries
+  suffix-match, the hint names the most specific (shortest) one. If a user
+  sees `"may match whitelisted entry 'mypackage.models.Base'"` they know
+  exactly which config entry is relevant.
 
 **Acceptance criteria:**
 
 - [ ] `is_plausible_whitelist_match()` implemented as a pure function
+- [ ] `check_relative_import_against_whitelist()` returns `"suppress"`,
+      `"hint"`, or `"flag"`
 - [ ] Suffix matching works for single-segment and multi-segment module paths
 - [ ] Project package prefix is verified against `--project-packages`
 - [ ] Depth plausibility check prevents impossible matches
-- [ ] No match attempted when `--project-packages` is not configured
+- [ ] No `--project-packages` + suffix match → `"hint"` (not `"flag"`)
+- [ ] `--project-packages` configured + no plausible match → `"flag"`
 - [ ] `from . import X` (no module) handled correctly (suffix is just `X`)
 - [ ] Multiple project packages all checked (any match = plausible)
-- [ ] ADR documenting the plausible matching decision created in `doc/adr/`
+- [ ] Suffix match check is exact at segment boundaries (e.g., `"odels.Base"`
+      does NOT match suffix `"models.Base"`)
+- [ ] ADR documenting the three-outcome decision created in `doc/adr/`
 - [ ] Edge cases: `from ... import X` (level=3), deeply nested modules
 
 **Complexity:** Medium
@@ -449,21 +597,42 @@ end-to-end relative import whitelist flow **before** implementing Ticket 7.
 - Multiple project packages: `project_packages=("pkg_a", "pkg_b")`,
   entry `"pkg_b.models.Base"` → `True`
 
+**Unit tests for `check_relative_import_against_whitelist()`:**
+
+- Suffix matches + no project_packages → returns `"hint"`
+- Suffix matches + project_packages configured + plausible → returns `"suppress"`
+- Suffix matches + project_packages configured + no plausible match (wrong
+  prefix) → returns `"flag"`
+- No suffix match at all → returns `"flag"` regardless of project_packages
+- Empty whitelist → returns `"flag"` (vacuously no suffix match)
+- Multiple suffix matches, one plausible → returns `"suppress"`
+- Multiple suffix matches, none plausible, no project_packages → returns
+  `"hint"` (hint names the most specific match)
+
 **End-to-end integration tests:**
 
 - Code with `from .models import Base` + `class Child(Base):`
   + whitelist `"mypackage.models.Base"` + `--project-packages=mypackage`
-  → no INH001
-- Same code without `--project-packages` → INH001 still flagged
-  (relative matching requires project-packages)
-- Same code with whitelist entry that doesn't suffix-match → INH001 flagged
+  → no INH001 (suppressed)
+- Same code without `--project-packages` → INH001 **with hint** mentioning
+  `"mypackage.models.Base"` and `--project-packages`
+- Same code with whitelist entry that doesn't suffix-match → plain INH001
+  (no hint)
+- Same code with `--project-packages=otherpkg` → plain INH001 (project
+  packages configured, just doesn't match this entry's prefix)
 - Mixed: class with one whitelisted relative base and one non-whitelisted
   → only the non-whitelisted one flagged
+- Hint message text verified: contains the matching entry name and the
+  `--project-packages` suggestion
+- `# noqa: INH001` suppresses both plain and hint variants
 
 **Acceptance criteria:**
 
 - [ ] Unit tests for `is_plausible_whitelist_match()` written and failing
-- [ ] Integration tests covering the full flow written and failing
+- [ ] Unit tests for `check_relative_import_against_whitelist()` written
+      and failing
+- [ ] Integration tests covering all three outcomes (suppress/hint/flag)
+      written and failing
 - [ ] Edge cases: level=3, module=None, multiple project packages
 - [ ] Tests are in `tests/test_visitors.py` (unit) and
       `tests/test_integration.py` (integration)
@@ -497,12 +666,18 @@ Update all relevant documentation to describe the new whitelist option.
       mypackage.core.BaseMixin
   ```
 - Explanation that entries must be fully qualified dotted names
-- Note on relative imports (based on Ticket 7 decision)
+- Section on relative imports explaining the three outcomes:
+  1. With `--project-packages`: plausible matches are automatically suppressed
+  2. Without `--project-packages`: a helpful hint tells you the base *might*
+     match a whitelisted entry and suggests configuring `--project-packages`
+  3. No suffix match: plain INH001 as usual
+- Example showing the hint message and how to resolve it
 - Example showing a whitelisted base producing no error
 
 **Acceptance criteria:**
 
 - [ ] README updated with option reference and examples
+- [ ] README documents the hint behavior for relative imports
 - [ ] CHANGELOG updated
 - [ ] All documentation passes `uv run pre-commit run --all-files`
 
@@ -533,8 +708,11 @@ Record the architectural decisions made during this feature's implementation.
   - Relative imports can be matched when `--project-packages` is configured
   - Plausible matching may produce false positives when different subpackages
     have identically-named modules and classes (accepted trade-off)
-  - Without `--project-packages`, relative imports cannot match whitelist
-    entries and remain flagged
+  - Without `--project-packages`, relative imports that suffix-match a
+    whitelist entry produce INH001 with a helpful hint (not silent, not
+    opaque — the user knows exactly what to do)
+  - The three-outcome model (suppress / hint / flag) provides graduated
+    feedback based on how much configuration the user has provided
 
 **Acceptance criteria:**
 
@@ -543,6 +721,8 @@ Record the architectural decisions made during this feature's implementation.
 - [ ] ADR documents the plausible suffix matching algorithm for relative imports
 - [ ] ADR documents the `--project-packages` requirement for relative matching
 - [ ] ADR documents the accepted false positive trade-off
+- [ ] ADR documents the three-outcome model (suppress / hint / flag) and the
+      rationale for providing actionable hints instead of silent failures
 
 **Complexity:** Low
 
