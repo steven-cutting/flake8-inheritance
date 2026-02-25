@@ -24,8 +24,10 @@ confirmed due to missing `--project-packages` configuration.
 
 - Register the option in `add_options()` in `checker.py`
   - Type: `str`, default: `""`, `parse_from_config=True`, `comma_separated_list=True`
-- Parse into a `frozenset[str]` in `parse_options()` and store as a class
-  attribute `_inh001_whitelisted_bases`
+- Parse into a `tuple[str, ...]` in `parse_options()` and store as a class
+  attribute `_inh001_whitelisted_bases` (convert to `frozenset` locally
+  where O(1) membership lookups are needed, matching the pattern used by
+  `_project_packages` and `_inh002_allowed_dunders`)
 - Follow the existing pattern used by `--project-packages` and
   `--inh002-allowed-dunders`
 - Add to `codes.py` a hint-variant message for INH001:
@@ -50,10 +52,11 @@ specific whitelist entry that suffix-matched.
 **Acceptance criteria:**
 
 - [ ] Option registered and parseable from CLI and config files
-- [ ] Empty default produces an empty frozenset
+- [ ] Empty default produces an empty tuple
 - [ ] Whitespace around entries is stripped
-- [ ] Duplicate entries are deduplicated
-- [ ] `parse_options` stores a `frozenset[str]` on the class
+- [ ] Duplicate entries are deduplicated (at parse time, before storing)
+- [ ] `parse_options` stores a `tuple[str, ...]` on the class (consistent
+      with `_project_packages` and `_inh002_allowed_dunders`)
 - [ ] `INH001_HINT` defined in `codes.py` with `{base}` and `{entry}` placeholders
 - [ ] `INH001_HINT.code` is still `"INH001"` (same noqa suppression)
 
@@ -71,11 +74,11 @@ Following the project's test-first TDD approach, write tests in
 **Test cases:**
 
 - Option is registered on the parser (attribute exists after `add_options`)
-- Single fully qualified class: `"mypackage.models.Base"` → `frozenset({"mypackage.models.Base"})`
-- Multiple classes: `"a.B,c.D"` → `frozenset({"a.B", "c.D"})`
+- Single fully qualified class: `"mypackage.models.Base"` → `("mypackage.models.Base",)`
+- Multiple classes: `"a.B,c.D"` → `("a.B", "c.D")`
 - Whitespace handling: `" a.B , c.D "` → stripped correctly
-- Empty string: `""` → empty frozenset
-- Duplicates: `"a.B,a.B"` → single entry in frozenset
+- Empty string: `""` → empty tuple `()`
+- Duplicates: `"a.B,a.B"` → deduplicated to `("a.B",)`
 - Integration: checker with whitelist skips whitelisted bases
 
 **Acceptance criteria:**
@@ -249,12 +252,12 @@ when there is a suffix match against a whitelist entry.
 
 **Implementation details:**
 
-- `InheritanceChecker.run()` passes the parsed `_inh001_whitelisted_bases`
-  frozenset and `_project_packages` to `InheritanceVisitor` (or to a
-  filtering step)
+- `InheritanceChecker.run()` converts the `_inh001_whitelisted_bases` tuple
+  to a `frozenset` for O(1) lookups, then passes it along with
+  `_project_packages` to `InheritanceVisitor` (or to a filtering step)
 - Before recording an INH001 error, resolve the base to its fully qualified
-  name and check membership in the whitelist frozenset
-- O(1) lookup via frozenset membership test
+  name and check membership in the whitelist set
+- O(1) lookup via frozenset membership test (converted from the stored tuple)
 - If the base is whitelisted, skip it; otherwise, report as before
 
 **Three-way decision for relative imports:**
@@ -374,8 +377,9 @@ a plausible match by checking three conditions:
    `--project-packages` value (relative imports are always within the project)
 2. **Suffix match**: The whitelist entry ends with the import's module suffix
    + name
-3. **Depth plausibility**: The whitelist entry has enough intermediate path
-   segments to be consistent with the relative import level
+3. **Structural validity**: The whitelist entry has enough segments to
+   contain both the project package root and the full suffix (i.e., the
+   entry is not malformed)
 
 **Worked examples:**
 
@@ -387,9 +391,8 @@ a plausible match by checking three conditions:
 # Whitelist entry "mypackage.models.Base":
 #   ✓ starts with "mypackage"
 #   ✓ ends with "models.Base"
-#   ✓ depth: entry has 3 segments, suffix has 2 → 1 intermediate segment
-#     level=1 means current file is ≥1 deep, so ≥0 segments between pkg root
-#     and the relative target. 1 intermediate segment is plausible.
+#   ✓ structural: entry has 3 segments, suffix has 2, pkg root has 1 →
+#     middle_count = 3 - 1 - 2 = 0 ≥ 0, so structurally valid
 #   → PLAUSIBLE MATCH
 
 # Example 2: from ..core.models import Base  (level=2, module="core.models")
@@ -397,9 +400,10 @@ a plausible match by checking three conditions:
 # Whitelist entry "mypackage.core.models.Base":
 #   ✓ starts with "mypackage"
 #   ✓ ends with "core.models.Base"
-#   ✓ depth: 4 segments total, suffix=3 → 1 intermediate. level=2 means
-#     we go up 2, so the target is 2 levels above current. Plausible if
-#     current file is ≥2 deep in the package.
+#   ✓ structural: 4 segments total, suffix=3, pkg root=1 →
+#     middle_count = 4 - 1 - 3 = 0 ≥ 0, structurally valid
+#     (level=2 is stored but not used for filtering — we lack the
+#     current file's package depth to validate it)
 #   → PLAUSIBLE MATCH
 
 # Example 3: from .models import Base  (level=1, module="models")
@@ -412,7 +416,7 @@ a plausible match by checking three conditions:
 # Whitelist entry "mypackage.foo.models.Base":
 #   ✓ starts with "mypackage"
 #   ✓ ends with "models.Base"
-#   ✓ depth is plausible
+#   ✓ structurally valid (middle_count = 4 - 1 - 2 = 1 ≥ 0)
 #   → PLAUSIBLE MATCH (may be a false positive — different subpackage
 #     could have a "models.Base" too, but this is acceptable)
 
@@ -446,9 +450,9 @@ def is_plausible_whitelist_match(
     if entry_root not in project_packages:
         return False
 
-    # Check depth plausibility:
-    # The entry without the project package prefix and without the suffix
-    # gives us the "middle" segments. These must be ≥ 0.
+    # Structural validity: the entry must have enough segments to
+    # contain the project package root + the suffix. The "middle"
+    # segments between root and suffix must be ≥ 0.
     entry_parts = whitelist_entry.split(".")
     suffix_parts = suffix.split(".")
     # middle_count = total_parts - 1 (pkg root) - len(suffix_parts)
@@ -456,11 +460,12 @@ def is_plausible_whitelist_match(
     if middle_count < 0:
         return False
 
-    # The relative level tells us how far up we go. The target is
-    # (level - 1) packages above the current package, then descend into
-    # module. The middle segments represent the path from package root
-    # to the relative target's parent. This must be ≥ 0, which we
-    # already checked.
+    # NOTE: rel_info.level is stored but NOT used for filtering here.
+    # To use it, we'd need to know the current file's depth within the
+    # package tree (e.g., mypackage/sub/mod.py is depth 2). Without
+    # that, we cannot validate whether the level is consistent with
+    # the middle_count. The level is preserved for potential future
+    # tightening if flake8 exposes file path information.
     return True
 ```
 
@@ -536,9 +541,10 @@ def check_relative_import_against_whitelist(
 - **`--project-packages` configured + no plausible match = plain INH001**:
   The user has given us enough info to check and the check failed. No hint
   needed — the entry genuinely doesn't match.
-- **Level is preserved for future tightening**: Even if we don't use it for
-  strict filtering now, storing the level allows future refinements (e.g., if
-  flake8 exposes file paths, we could resolve exactly).
+- **Level is stored but not used for filtering**: Without knowing the current
+  file's depth in the package tree, we cannot validate whether `level` is
+  consistent with `middle_count`. We store it for future tightening if flake8
+  exposes file path information, or if we add a `--source-root` option.
 - **Hint names the specific whitelist entry**: When multiple entries
   suffix-match, the hint names the most specific (shortest) one. If a user
   sees `"may match whitelisted entry 'mypackage.models.Base'"` they know
@@ -551,7 +557,7 @@ def check_relative_import_against_whitelist(
       `"hint"`, or `"flag"`
 - [ ] Suffix matching works for single-segment and multi-segment module paths
 - [ ] Project package prefix is verified against `--project-packages`
-- [ ] Depth plausibility check prevents impossible matches
+- [ ] Structural validity check rejects malformed entries (middle_count < 0)
 - [ ] No `--project-packages` + suffix match → `"hint"` (not `"flag"`)
 - [ ] `--project-packages` configured + no plausible match → `"flag"`
 - [ ] `from . import X` (no module) handled correctly (suffix is just `X`)
@@ -701,7 +707,7 @@ Record the architectural decisions made during this feature's implementation.
   - Whitelist entries are fully qualified dotted names
   - Absolute imports are resolved to exact FQNs and matched precisely
   - Relative imports use plausible suffix matching: verify project package
-    prefix + suffix match + depth plausibility
+    prefix + suffix match + structural validity
   - `--project-packages` is required for relative import whitelist matching
 - Consequences:
   - Users must know the fully qualified name of whitelisted bases
@@ -776,5 +782,6 @@ we can perform plausible matching:
    project package (relative imports are always within the project)
 2. **Module suffix + name** → the whitelist entry must end with the
    import's module path + class name
-3. **Dot level** → preserved for depth plausibility checks and potential
-   future tightening if flake8 exposes file paths
+3. **Dot level** → stored for future tightening (not currently used for
+   filtering since we lack the file's package depth, but preserved for
+   when flake8 exposes file paths or a `--source-root` option is added)
