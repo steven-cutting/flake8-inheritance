@@ -121,10 +121,12 @@ Add a new dict (or extend existing ones) to store full import context:
 
 ```python
 # New storage for FQN resolution:
-self.full_modules: dict[str, str | None] = {}
-# Maps local_name → full module path as written in the import statement
-# e.g., "Base" → "mypackage.models" (from `from mypackage.models import Base`)
-# e.g., "m"    → "mypackage.models" (from `import mypackage.models as m`)
+self.full_modules: dict[str, str] = {}
+# Maps local_name → the fully qualified name of what that local name
+# is BOUND to (not the module it was imported from).
+# e.g., "Base" → "mypackage.models.Base" (from `from mypackage.models import Base`)
+# e.g., "m"    → "mypackage.models"      (from `import mypackage.models as m`)
+# e.g., "mypackage" → "mypackage"        (from `import mypackage.models`)
 
 # For relative imports, store structured info:
 self.relative_imports: dict[str, RelativeImportInfo] = {}
@@ -141,13 +143,20 @@ class RelativeImportInfo:
 ```
 
 In `visit_Import`:
-- `import mypackage.models` → `full_modules["mypackage"] = "mypackage.models"`
-  (or the local alias)
+- `import mypackage.models` → `full_modules["mypackage"] = "mypackage"`
+  (Python binds the name `mypackage` to the top-level package; the
+  submodule `models` is loaded as a side effect but the local name
+  refers to the package itself)
 - `import mypackage.models as m` → `full_modules["m"] = "mypackage.models"`
+  (the alias `m` is bound to the `mypackage.models` module directly)
 
 In `visit_ImportFrom`:
-- `from mypackage.models import Base` → `full_modules["Base"] = "mypackage.models"`
-- `from mypackage.models import Base as B` → `full_modules["B"] = "mypackage.models"`
+- `from mypackage.models import Base` →
+  `full_modules["Base"] = "mypackage.models.Base"` (FQN of what `Base` is bound to)
+- `from mypackage.models import Base as B` →
+  `full_modules["B"] = "mypackage.models.Base"` (alias resolves to same FQN)
+- `from mypackage import models` →
+  `full_modules["models"] = "mypackage.models"` (FQN of what `models` is bound to)
 - `from .models import Base` (level=1, module="models") →
   `relative_imports["Base"] = RelativeImportInfo(level=1, module="models", name="Base")`
 - `from ..core import Mixin` (level=2, module="core") →
@@ -158,17 +167,38 @@ In `visit_ImportFrom`:
 ### 3b. FQN resolution for absolute imports
 
 Add a method `resolve_fqn(base_name: str) -> str | None` to `ImportTracker`
-(or as a standalone function):
+(or as a standalone function).
 
-- `Base` (ast.Name) where `full_modules["Base"] = "mypackage.models"` and
-  `original_names["Base"] = "Base"` → `"mypackage.models.Base"`
-- `m.Base` (ast.Attribute) where `full_modules["m"] = "mypackage.models"` →
-  `"mypackage.models.Base"`
-- `mypackage.models.Base` (ast.Attribute, no alias) where
-  `full_modules["mypackage"] = "mypackage.models"` →
-  `"mypackage.models.Base"`
-- Same-file class with no import → returns bare name `"Base"` (no FQN)
-- Unresolvable → returns `None`
+Since `full_modules` stores the FQN of what each local name is bound to,
+resolution is a simple formula:
+
+```
+FQN(base) = full_modules[root_name] + tail_after_root
+```
+
+Where `root_name` is the first segment of the resolved base name (from
+`_resolve_base()`) and `tail_after_root` is everything after it (empty
+string for bare names, `".attr"` for dotted access).
+
+**Resolution examples:**
+
+- `Base` (ast.Name) where `full_modules["Base"] = "mypackage.models.Base"`
+  → FQN = `"mypackage.models.Base"` (direct lookup, no construction needed)
+- `m.Base` (ast.Attribute) where `full_modules["m"] = "mypackage.models"`
+  → root = `"m"`, tail = `".Base"`
+  → FQN = `"mypackage.models" + ".Base"` = `"mypackage.models.Base"`
+- `mypackage.models.Base` (ast.Attribute, un-aliased `import mypackage.models`)
+  where `full_modules["mypackage"] = "mypackage"`
+  → root = `"mypackage"`, tail = `".models.Base"`
+  → FQN = `"mypackage" + ".models.Base"` = `"mypackage.models.Base"`
+- Same-file class with no import → root not in `full_modules`,
+  returns bare name `"Base"` (no FQN available)
+- Unresolvable / dynamic base → returns `None`
+
+**Note:** `original_names` is NOT needed for FQN resolution since
+`full_modules` already stores the complete binding FQN. The
+`original_names` dict is preserved for backward compatibility with
+existing `classify()` and `ABCPurityVisitor` logic.
 
 ### 3c. Structured relative import representation
 
@@ -205,11 +235,12 @@ from Ticket 3 **before** implementing it.
 
 **Test cases for enriched storage:**
 
-- `full_modules` populated correctly:
-  - `from mypackage.models import Base` → `full_modules["Base"] = "mypackage.models"`
-  - `import mypackage.models` → `full_modules["mypackage"] = "mypackage.models"`
+- `full_modules` stores the FQN of what the local name is bound to:
+  - `from mypackage.models import Base` → `full_modules["Base"] = "mypackage.models.Base"`
+  - `from mypackage.models import Base as B` → `full_modules["B"] = "mypackage.models.Base"`
+  - `from mypackage import models` → `full_modules["models"] = "mypackage.models"`
+  - `import mypackage.models` → `full_modules["mypackage"] = "mypackage"`
   - `import mypackage.models as m` → `full_modules["m"] = "mypackage.models"`
-  - `from mypackage import models` → `full_modules["models"] = "mypackage"`
 - `relative_imports` populated correctly:
   - `from .models import Base` → `RelativeImportInfo(level=1, module="models", name="Base")`
   - `from ..core.models import Base` → `RelativeImportInfo(level=2, module="core.models", name="Base")`
@@ -217,13 +248,18 @@ from Ticket 3 **before** implementing it.
   - `from ... import deep` → `RelativeImportInfo(level=3, module=None, name="deep")`
 - Existing `imports` and `original_names` dicts unchanged (regression tests)
 
-**Test cases for FQN resolution:**
+**Test cases for FQN resolution (`resolve_fqn`):**
 
-- `from mypackage.models import Base` → base `Base` resolves to `"mypackage.models.Base"`
-- `import mypackage.models` → base `mypackage.models.Base` resolves to `"mypackage.models.Base"`
-- `from mypackage import models` → base `models.Base` resolves to `"mypackage.models.Base"`
-- `from mypackage.models import Base as B` → base `B` resolves to `"mypackage.models.Base"`
-- `import mypackage.models as m` → base `m.Base` resolves to `"mypackage.models.Base"`
+- `from mypackage.models import Base` → base `Base` resolves to
+  `"mypackage.models.Base"` (direct lookup from `full_modules`)
+- `from mypackage.models import Base as B` → base `B` resolves to
+  `"mypackage.models.Base"` (alias, same direct lookup)
+- `from mypackage import models` → base `models.Base` resolves to
+  `"mypackage.models" + ".Base"` = `"mypackage.models.Base"`
+- `import mypackage.models` → base `mypackage.models.Base` resolves to
+  `"mypackage" + ".models.Base"` = `"mypackage.models.Base"`
+- `import mypackage.models as m` → base `m.Base` resolves to
+  `"mypackage.models" + ".Base"` = `"mypackage.models.Base"`
 - Relative import: `from .models import Base` → returns `None` or
   `RelativeImportInfo` (not a FQN string — handled separately in Ticket 7)
 - Bare name (same-file class): `Base` with no import → resolves to bare `"Base"`
@@ -441,8 +477,12 @@ def is_plausible_whitelist_match(
     else:
         suffix = rel_info.name
 
-    # Check if whitelist entry ends with the suffix
-    if not whitelist_entry.endswith(suffix):
+    # Check if whitelist entry ends with the suffix at a dot boundary.
+    # Bare endswith() would let "othermodels.Base" match suffix "models.Base".
+    if not (
+        whitelist_entry.endswith(suffix)
+        and (whitelist_entry == suffix or whitelist_entry[-(len(suffix) + 1)] == ".")
+    ):
         return False
 
     # Check if whitelist entry starts with a project package
@@ -487,13 +527,22 @@ def check_relative_import_against_whitelist(
         "hint"     — suffix matches but can't confirm, emit INH001 with hint
         "flag"     — no match at all, emit plain INH001
     """
-    # Build the suffix from the relative import
+    # First, check if any whitelist entry is a plausible match
+    # (is_plausible_whitelist_match already enforces dot-boundary suffix
+    # matching, project package prefix, and structural validity)
+    if project_packages:
+        for entry in whitelist:
+            if is_plausible_whitelist_match(rel_info, entry, project_packages):
+                return "suppress"
+
+    # No plausible match found (or project_packages not configured).
+    # Check if any entry has a suffix match — if so, we can hint.
+    # Build the suffix from the relative import.
     if rel_info.module:
         suffix = f"{rel_info.module}.{rel_info.name}"
     else:
         suffix = rel_info.name
 
-    # Find all whitelist entries whose suffix matches
     suffix_matches = [
         entry for entry in whitelist
         if entry.endswith(suffix)
@@ -508,20 +557,9 @@ def check_relative_import_against_whitelist(
         # Emit INH001 with a hint naming the matching entry.
         return "hint"
 
-    # project_packages is configured — attempt plausible matching
-    for entry in suffix_matches:
-        if is_plausible_whitelist_match(rel_info, entry, project_packages):
-            return "suppress"
-
     # project_packages IS configured and no plausible match found.
-    # Two sub-cases:
-    #   a) Entry prefix doesn't match any project package → plain INH001
-    #      (the entry belongs to a different project, not relevant)
-    #   b) Entry prefix matches but depth is impossible → plain INH001
-    #
-    # However, if entries DO start with a configured project_package but
-    # depth is the issue, that's likely a misconfiguration too. We could
-    # hint here as well, but for now we flag plainly — the user has
+    # The entry prefix doesn't match any project package, or the
+    # entry is structurally invalid. Flag plainly — the user has
     # configured project-packages, so the tool has done its best.
     return "flag"
 ```
