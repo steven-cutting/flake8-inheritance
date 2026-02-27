@@ -33,7 +33,7 @@ confirmed due to missing `--project-packages` configuration.
 - Add to `codes.py` a hint-variant message for INH001:
 
 ```python
-INH001_HINT = ErrorCode(
+INH001_HINT: Final[ErrorCode] = ErrorCode(
     code="INH001",
     message=(
         "Inheritance from internal class '{base}' is not allowed "
@@ -54,7 +54,9 @@ specific whitelist entry that suffix-matched.
 - [ ] Option registered and parseable from CLI and config files
 - [ ] Empty default produces an empty tuple
 - [ ] Whitespace around entries is stripped
-- [ ] Duplicate entries are deduplicated (at parse time, before storing)
+- [ ] Duplicate entries are handled naturally (the stored tuple may contain
+      duplicates; deduplication occurs when converting to `frozenset` for
+      O(1) lookups, matching the pattern used by existing options)
 - [ ] `parse_options` stores a `tuple[str, ...]` on the class (consistent
       with `_project_packages` and `_inh002_allowed_dunders`)
 - [ ] `INH001_HINT` defined in `codes.py` with `{base}` and `{entry}` placeholders
@@ -78,8 +80,8 @@ Following the project's test-first TDD approach, write tests in
 - Multiple classes: `"a.B,c.D"` → `("a.B", "c.D")`
 - Whitespace handling: `" a.B , c.D "` → stripped correctly
 - Empty string: `""` → empty tuple `()`
-- Duplicates: `"a.B,a.B"` → deduplicated to `("a.B",)`
-- Integration: checker with whitelist skips whitelisted bases
+- Duplicates: `"a.B,a.B"` → `("a.B", "a.B")` (duplicates preserved in tuple;
+  deduplication happens at frozenset conversion time, matching existing options)
 
 **Acceptance criteria:**
 
@@ -260,8 +262,8 @@ from Ticket 3 **before** implementing it.
   `"mypackage" + ".models.Base"` = `"mypackage.models.Base"`
 - `import mypackage.models as m` → base `m.Base` resolves to
   `"mypackage.models" + ".Base"` = `"mypackage.models.Base"`
-- Relative import: `from .models import Base` → returns `None` or
-  `RelativeImportInfo` (not a FQN string — handled separately in Ticket 7)
+- Relative import: `from .models import Base` → returns `None` (the base
+  is in `relative_imports`, not `full_modules`; handled separately in Ticket 7)
 - Bare name (same-file class): `Base` with no import → resolves to bare `"Base"`
 - Dynamic/unresolvable base → returns `None`
 - `ast.Subscript` base: `Base[T]` → unwraps to `Base` before resolving
@@ -515,17 +517,27 @@ When a relative import base would normally trigger INH001 and the whitelist
 is non-empty, the following logic runs:
 
 ```python
+@dataclass(frozen=True)
+class WhitelistDecision:
+    """Result of checking a relative import against the whitelist."""
+
+    action: Literal["suppress", "hint", "flag"]
+    matched_entry: str | None = None  # The whitelist entry that matched (for hints)
+
+
 def check_relative_import_against_whitelist(
     rel_info: RelativeImportInfo,
     whitelist: frozenset[str],
     project_packages: tuple[str, ...],
-) -> Literal["suppress", "hint", "flag"]:
+) -> WhitelistDecision:
     """Determine how to handle a relative import base vs the whitelist.
 
-    Returns:
-        "suppress" — plausible match confirmed, emit no error
-        "hint"     — suffix matches but can't confirm, emit INH001 with hint
-        "flag"     — no match at all, emit plain INH001
+    Returns a WhitelistDecision with:
+        action="suppress" — plausible match confirmed, emit no error
+        action="hint"     — suffix matches but can't confirm, emit INH001 with hint
+        action="flag"     — no match at all, emit plain INH001
+    The matched_entry field is populated for "suppress" and "hint" actions,
+    giving the caller the specific whitelist entry name for hint messages.
     """
     # First, check if any whitelist entry is a plausible match
     # (is_plausible_whitelist_match already enforces dot-boundary suffix
@@ -533,7 +545,7 @@ def check_relative_import_against_whitelist(
     if project_packages:
         for entry in whitelist:
             if is_plausible_whitelist_match(rel_info, entry, project_packages):
-                return "suppress"
+                return WhitelistDecision(action="suppress", matched_entry=entry)
 
     # No plausible match found (or project_packages not configured).
     # Check if any entry has a suffix match — if so, we can hint.
@@ -550,18 +562,21 @@ def check_relative_import_against_whitelist(
     ]
 
     if not suffix_matches:
-        return "flag"  # No suffix match at all → plain INH001
+        return WhitelistDecision(action="flag")  # No suffix match → plain INH001
+
+    # Pick the most specific (shortest) match for the hint message
+    best_match = min(suffix_matches, key=len)
 
     if not project_packages:
         # Suffix matches exist but we can't verify the prefix.
         # Emit INH001 with a hint naming the matching entry.
-        return "hint"
+        return WhitelistDecision(action="hint", matched_entry=best_match)
 
     # project_packages IS configured and no plausible match found.
     # The entry prefix doesn't match any project package, or the
     # entry is structurally invalid. Flag plainly — the user has
     # configured project-packages, so the tool has done its best.
-    return "flag"
+    return WhitelistDecision(action="flag")
 ```
 
 **Key design decisions:**
@@ -583,16 +598,18 @@ def check_relative_import_against_whitelist(
   file's depth in the package tree, we cannot validate whether `level` is
   consistent with `middle_count`. We store it for future tightening if flake8
   exposes file path information, or if we add a `--source-root` option.
-- **Hint names the specific whitelist entry**: When multiple entries
-  suffix-match, the hint names the most specific (shortest) one. If a user
-  sees `"may match whitelisted entry 'mypackage.models.Base'"` they know
-  exactly which config entry is relevant.
+- **Hint names the specific whitelist entry**: `WhitelistDecision.matched_entry`
+  carries the entry name back to the caller for hint message generation. When
+  multiple entries suffix-match, the hint names the most specific (shortest)
+  one. If a user sees `"may match whitelisted entry 'mypackage.models.Base'"`
+  they know exactly which config entry is relevant.
 
 **Acceptance criteria:**
 
 - [ ] `is_plausible_whitelist_match()` implemented as a pure function
-- [ ] `check_relative_import_against_whitelist()` returns `"suppress"`,
-      `"hint"`, or `"flag"`
+- [ ] `check_relative_import_against_whitelist()` returns a `WhitelistDecision`
+      with action `"suppress"`, `"hint"`, or `"flag"` and `matched_entry`
+      populated for `"suppress"` and `"hint"` actions
 - [ ] Suffix matching works for single-segment and multi-segment module paths
 - [ ] Project package prefix is verified against `--project-packages`
 - [ ] Structural validity check rejects malformed entries (middle_count < 0)
@@ -643,15 +660,15 @@ end-to-end relative import whitelist flow **before** implementing Ticket 7.
 
 **Unit tests for `check_relative_import_against_whitelist()`:**
 
-- Suffix matches + no project_packages → returns `"hint"`
-- Suffix matches + project_packages configured + plausible → returns `"suppress"`
+- Suffix matches + no project_packages → returns `WhitelistDecision(action="hint", matched_entry=...)`
+- Suffix matches + project_packages configured + plausible → returns `WhitelistDecision(action="suppress", matched_entry=...)`
 - Suffix matches + project_packages configured + no plausible match (wrong
-  prefix) → returns `"flag"`
-- No suffix match at all → returns `"flag"` regardless of project_packages
-- Empty whitelist → returns `"flag"` (vacuously no suffix match)
-- Multiple suffix matches, one plausible → returns `"suppress"`
+  prefix) → returns `WhitelistDecision(action="flag")`
+- No suffix match at all → returns `WhitelistDecision(action="flag")` regardless of project_packages
+- Empty whitelist → returns `WhitelistDecision(action="flag")` (vacuously no suffix match)
+- Multiple suffix matches, one plausible → returns `WhitelistDecision(action="suppress", matched_entry=...)`
 - Multiple suffix matches, none plausible, no project_packages → returns
-  `"hint"` (hint names the most specific match)
+  `WhitelistDecision(action="hint", matched_entry=...)` (matched_entry names the most specific match)
 
 **End-to-end integration tests:**
 
@@ -760,7 +777,8 @@ Record the architectural decisions made during this feature's implementation.
 
 **Acceptance criteria:**
 
-- [ ] ADR created via `decree new "..."` in `doc/adr/`
+- [ ] ADR created in `doc/adr/` following the existing numbered naming
+      convention (e.g., `0012-*.md`)
 - [ ] ADR documents the fully qualified name requirement
 - [ ] ADR documents the plausible suffix matching algorithm for relative imports
 - [ ] ADR documents the `--project-packages` requirement for relative matching
@@ -780,19 +798,19 @@ Record the architectural decisions made during this feature's implementation.
 | 2 | Option parsing tests (TDD) | Low | — |
 | 3 | Enrich `ImportTracker` + FQN resolution | Medium | 1 |
 | 4 | Enriched tracker + FQN resolution tests (TDD) | Medium | — |
-| 5 | Integrate whitelist into INH001 checking | Medium | 1, 3 |
-| 6 | Whitelist integration tests (TDD) | Medium | — |
-| 7 | Plausible suffix matching for relative imports | Medium | 3, 5 |
+| 7 | Plausible suffix matching for relative imports | Medium | 3 |
 | 8 | Plausible suffix matching tests (TDD) | Medium | — |
-| 9 | Update documentation | Low | 5, 7 |
+| 5 | Integrate whitelist into INH001 checking | Medium | 1, 3, 7 |
+| 6 | Whitelist integration tests (TDD) | Medium | — |
+| 9 | Update documentation | Low | 5 |
 | 10 | Create ADR | Low | 7 |
 
 **Recommended implementation order (TDD pairs):**
 
 1. Tickets 2 + 1 (option parsing: tests first, then implementation)
 2. Tickets 4 + 3 (enriched tracker + FQN: tests first, then implementation)
-3. Tickets 6 + 5 (whitelist integration: tests first, then implementation)
-4. Tickets 8 + 7 (plausible suffix matching: tests first, then implementation)
+3. Tickets 8 + 7 (plausible suffix matching: tests first, then implementation)
+4. Tickets 6 + 5 (whitelist integration: tests first, then implementation)
 5. Tickets 9 + 10 (documentation and ADR)
 
 **Dependency graph:**
@@ -801,12 +819,14 @@ Record the architectural decisions made during this feature's implementation.
 Tickets 2,4,6,8 (tests)     Tickets 1,3 (foundation)
         │                          │
         ▼                          ▼
-   Ticket 5 (integration) ◄── Tickets 1 + 3
+   Ticket 7 (plausible suffix matching) ◄── Ticket 3
+        │               pure functions: is_plausible_whitelist_match(),
+        │               check_relative_import_against_whitelist()
         │
         ▼
-   Ticket 7 (plausible suffix matching for relative imports)
-        │               uses --project-packages to verify prefix
-        │               uses level + module suffix for matching
+   Ticket 5 (integration) ◄── Tickets 1 + 3 + 7
+        │               wires whitelist into InheritanceVisitor/checker,
+        │               uses Ticket 7's functions for relative imports
         │
         ├──► Ticket 9 (docs)
         └──► Ticket 10 (ADR)
